@@ -67,7 +67,7 @@ const dom = {
   egFace:$('eg-face'), egButt:$('eg-butt'), egMouth:$('eggman-mouth'),
   egBush:$('eg-bush'), egHat:$('eg-hat'), egButtHat:$('eg-butt-hat'),
   egTie:$('eg-tie'), egArm3:$('eg-arm3'),
-  mini:$('mini-eggman'),
+  mini:$('mini-eggman'), props:$('props'),
   play:$('play'), dialogs:$('dialogs'),
   confetti:$('confetti'), balloons:$('balloons'), bdayText:$('bday-text'),
   mute:$('mute')
@@ -466,6 +466,7 @@ function resetPresentation(){
   clearEggs();
   EM.reset();
   setShown(dom.mini, false); dom.mini.style.transform='';
+  dom.props.innerHTML='';                    // clear any finale props
   dom.menubar.innerHTML = '<span>File</span><span>Egg</span><span>Special</span>';
   dom.stage.style.setProperty('--basket-x','0');
   ui.setTitle('FEED EGGS'); ui.setCounter('0 EGGS');
@@ -557,7 +558,21 @@ async function canonicalWinSequence(){
 /* ==========================================================================
    MODE 2 — CHAOS REPLAY (curated event engine, always completable)
    ========================================================================== */
-const EGG_VALUES = [[0,10],[1,26],[2,20],[3,14],[4,8],[6,4],[8,4],[10,3],[17,2],[23,2],[40,1],[41,0.6],[80,0.6],[-1,4]];
+/* Normal fed-egg values: 1-19 EXCLUDING multiples of 5, so totals feel arbitrary.
+   These drive actualChaosScore (reliable progression). displayedEggCount lies. */
+const NORMAL_EGG_VALUES = [[1,8],[2,9],[3,9],[4,8],[6,7],[7,6],[8,6],[9,5],[11,4],[12,4],[13,3],[14,3],[16,2],[17,3],[18,2],[19,2]];
+const DISPLAY_LIES = ['EGG','???','40','80','41','0','-3','ONE MILLION','SIX'];
+function normalEggValue(){ return weighted(NORMAL_EGG_VALUES); }
+/* generic weighted pick over objects carrying a .weight */
+function pickWeighted(arr){ let t=0; for(const a of arr) t+=(a.weight||1); let r=Math.random()*t;
+  for(const a of arr){ if((r-=(a.weight||1))<0) return a; } return arr[arr.length-1]; }
+/* repetition memory — persists across Play Again within a session */
+let _recentFinales=[], _recentMinors=[], _lastTarget=0, _chaos=null;
+
+/* ---- crude monochrome finale props (injected into #props, cleared each run) ---- */
+function prop(svg, tx, ty){ const g=document.createElementNS('http://www.w3.org/2000/svg','g');
+  g.innerHTML=svg; if(tx!=null) g.setAttribute('transform',`translate(${tx} ${ty||0})`); dom.props.appendChild(g); return g; }
+const EGGLET = '<path class="eggbody" d="M0,-52 C-26,-52 -36,-26 -36,-8 C-36,14 -20,14 0,14 C20,14 36,14 36,-8 C36,-26 26,-52 0,-52 Z"/><circle class="eye" cx="-10" cy="-30" r="5"/><circle class="eye" cx="10" cy="-30" r="5"/><ellipse class="mouth" cx="0" cy="-10" rx="11" ry="9"/><line class="ln" x1="-12" y1="14" x2="-12" y2="30"/><line class="ln" x1="12" y1="14" x2="12" y2="30"/>';
 const SYS_MESSAGES = ['EGG ACCEPTED.','THAT WAS AN EGG.','THAT EGG DIDN’T COUNT.','THAT EGG COUNTED TWICE.',
   'THIS EGG IS 17 EGGS.','EGG NOT FOUND.','YOU HAVE TOO MANY EGGS.','YOU LOST 4 EGGS.','EGGMAN HAS NOTICED.',
   'HE NEEDS THIS.','PLEASE KEEP FEEDING HIM.','WRONG EGG.','EGG TOTAL UNAVAILABLE.','THE NUMBER IS CORRECT.',
@@ -568,8 +583,8 @@ const END_MESSAGES = ['YOU WON A NUDE EGG.','ANOTHER NUDE EGG.','YOU WON HIM AGA
   'PLEASE DO NOT CLOSE THE EGG.','CONGRATS, MEDIUM BOY.','NUDE EGG ACHIEVED.'];
 const PACKS = [[80,20],[37,3],[1,3],[400,2],[6,3],[-12,2]];
 
-/* ---- curated CHAOS EVENTS. Each cleans up after itself. ---- */
-const CHAOS_EVENTS = [
+/* ---- curated MINOR EVENTS. Each cleans up after itself. ---- */
+const MINOR_EVENTS = [
   // ---- EGGMAN BEHAVIOR ----
   { id:'spitTwo', min:1, weight:3, async run(){ EM.eating(true); await sleep(300); EM.eating(false);
       addBasketEgg({tiny:true}); addBasketEgg({tiny:true}); flash('EGGMAN RETURNED 2 EGGS.'); } },
@@ -606,6 +621,45 @@ const CHAOS_EVENTS = [
   { id:'update', min:2, weight:2, async run(){ await dialogAsync({text:'EGG UPDATE AVAILABLE.',buttons:[{label:'UPDATE',cls:'default'}]}); await dialogAsync({text:'EGG IS UP TO DATE.',buttons:[{label:'OK',cls:'default'}]}); } },
   { id:'loadingEgg', min:1, weight:3, async run(){ const b=showDialog({icon:false,text:'LOADING',bar:true,barDur:1500,buttons:[]}); await sleep(1800); b.querySelector('.dlg-text').textContent='EGG'; await sleep(900); closeDialog(b); } },
   { id:'inMeeting', min:2, weight:2, async run(){ await dialogAsync({text:'EGGMAN IS CURRENTLY\nIN A MEETING.',buttons:[{label:'OK',cls:'default'}]}); } },
+  // ---- short references + ORIGINAL follow-ups ----
+  { id:'adventure365', min:2, weight:2, async run(){
+      await dialogAsync({icon:false,text:'MIKE FROM ADVENTURE 365\nSAYS YOU’RE WRENCHING\nON THE ZIPLINE.',buttons:[{label:'SHUT UP, MIKE',cls:'default'},{label:'CARLOS IS A HO'}]});
+      await dialogAsync({icon:false,text:'CARMELLO SAYS YOUR FACE\nLOOKS LIKE A CLOCK.',buttons:[{label:'OK',cls:'default'}]}); } },
+  { id:'danFlashes', min:2, weight:2, async run(){ addBasketEgg({}); await dialogAsync({icon:false,text:'THIS EGG COSTS $4,000.\nTHE PATTERN IS VERY\nCOMPLICATED.',buttons:[{label:'OK',cls:'default'}]}); } },
+  { id:'sloppyMudpie', min:2, weight:2, async run(){ await dialogAsync({icon:false,text:'ONE EGG IS QUARANTINED.\nSOMEBODY MADE A\nSLOPPY MUDPIE.',buttons:[{label:'OK',cls:'default'}]}); } },
+  { id:'tables', min:2, weight:2, async run(){ await dialogAsync({icon:false,text:'TODAY WE WILL LEARN\nABOUT TABLES.',buttons:[{label:'OK',cls:'default'}]});
+      await dialogAsync({icon:false,text:'THIS HAS NOTHING\nTO DO WITH EGGS.',buttons:[{label:'OK',cls:'default'}]}); } },
+  { id:'turboTeam', min:2, weight:2, async run(){ const x=EM.x; for(let i=0;i<2;i++){ await EM.walkTo(x-120,300); await EM.walkTo(x+120,300); } await EM.walkTo(x,250);
+      await dialogAsync({icon:false,text:'YOU ARE NOT PART\nOF THE TURBO TEAM.',buttons:[{label:'OK',cls:'default'}]}); } },
+  { id:'babyOfYear', min:3, weight:2, async run(){ addBasketEgg({tiny:true}); addBasketEgg({tiny:true}); addBasketEgg({tiny:true});
+      await dialogAsync({icon:false,text:'ONE CONTESTANT IS\nBART HARLEY JARVIS.',buttons:[{label:'OK',cls:'default'}]});
+      await dialogAsync({icon:false,text:'THE COMPUTER DISLIKES\nBART HARLEY JARVIS.',buttons:[{label:'OK',cls:'default'}]}); } },
+  { id:'coffinEgg', min:2, weight:2, async run(){ const g=prop(EGGLET, 200, 470); g.querySelector('.eggbody').setAttribute('transform','scale(.5)');
+      const box=prop('<rect class="ln" x="-30" y="-18" width="60" height="34" fill="#fff"/>',200,470);
+      g.setAttribute('transform','translate(200 470)'); await sleep(400);
+      g.style.transition='transform 1s steps(8)'; g.setAttribute('transform','translate(200 620)'); await sleep(1100);
+      showDialog({icon:false,text:'THIS HAPPENS ALL THE TIME.',buttons:[{label:'OK',cls:'default'}]}); await sleep(400); g.remove(); box.remove(); } },
+  { id:'hotDog', min:2, weight:2, async run(){ const car=prop('<rect class="ln" x="-40" y="-14" width="80" height="26" rx="12" fill="#fff"/><circle class="eye" cx="-22" cy="14" r="9"/><circle class="eye" cx="22" cy="14" r="9"/>', -80, 250);
+      car.style.transition='transform 1.2s linear'; await sleep(30); car.setAttribute('transform','translate(1040 250)'); await sleep(1250); car.remove();
+      await dialogAsync({icon:false,text:'WE’RE ALL TRYING TO FIND\nWHO DID THIS.',buttons:[{label:'OK',cls:'default'}]}); } },
+  { id:'fullyLoaded', min:2, weight:2, async run(){ await dialogAsync({icon:false,text:'YOU GAVE HIM ALL THE\nFULLY-LOADED EGGS.',buttons:[{label:'OK',cls:'default'}]}); } },
+  { id:'order55', min:2, weight:2, async run(){ const b=showDialog({icon:false,text:'55 EGGS. 55 EGGS. 55 EGGS.',buttons:[]}); await sleep(1400);
+      b.querySelector('.dlg-text').textContent='YOU HAVE 3 EGGS.'; await sleep(1100); closeDialog(b); } },
+  // ---- ORIGINAL office/computer nonsense ----
+  { id:'eggUpdateFoot', min:2, weight:2, async run(){ const b=showDialog({icon:false,text:'INSTALLING EGG UPDATE',bar:true,barDur:1400,buttons:[]}); await sleep(1700); closeDialog(b);
+      const f=document.querySelector('#eg-leg-r .foot'); if(f){ f.setAttribute('rx','34'); }  /* one foot 2px longer, forever */ } },
+  { id:'eggPTO', min:2, weight:2, async run(){ await dialogAsync({icon:false,text:'ONE EGG IS ON PTO\nUNTIL MONDAY.',buttons:[{label:'OK',cls:'default'}]}); addBasketEgg({}); } },
+  { id:'twoFactor', min:2, weight:2, async run(){ await dialogAsync({icon:false,text:'ARE YOU TRYING TO\nFEED EGGMAN?',buttons:[{label:'YES',cls:'default'},{label:'THIS WASN’T ME'}]}); } },
+  { id:'eggCaptcha', min:2, weight:2, async run(){ await dialogAsync({icon:false,text:'SELECT ALL SQUARES\nCONTAINING EGGS.',buttons:[{label:'VERIFY',cls:'default'}]});
+      await dialogAsync({icon:false,text:'ALL SQUARES CONTAIN\nONE ENORMOUS EGG.',buttons:[{label:'OK',cls:'default'}]}); } },
+  { id:'taxDependent', min:2, weight:2, async run(){ await dialogAsync({icon:false,text:'EGGMAN HAS CLAIMED THIS\nEGG AS A DEPENDENT.',buttons:[{label:'OK',cls:'default'}]}); } },
+  { id:'tier2', min:2, weight:2, async run(){ await dialogAsync({icon:false,text:'YOUR EGG HAS BEEN\nESCALATED.',buttons:[{label:'OK',cls:'default'}]});
+      await dialogAsync({icon:false,text:'YOUR EGG HAS BEEN\nESCALATED.',buttons:[{label:'OK',cls:'default'}]}); } },
+  { id:'printerCyan', min:1, weight:3, async run(){ await dialogAsync({icon:'!',text:'CANNOT FEED EGG:\nPRINTER LOW ON CYAN.',buttons:[{label:'OK',cls:'default'}]}); } },
+  { id:'previouslyEaten', min:2, weight:2, async run(){ await dialogAsync({icon:false,text:'THIS EGG WAS ALREADY EATEN\nIN ANOTHER TIMELINE.',buttons:[{label:'OK',cls:'default'}]}); } },
+  { id:'wrongDept', min:2, weight:2, async run(){ EM.eating(true); await sleep(260); EM.eating(false); addBasketEgg({});
+      await dialogAsync({icon:false,text:'THIS EGG BELONGS\nTO PAYROLL.',buttons:[{label:'OK',cls:'default'}]}); } },
+  { id:'compliance', min:2, weight:2, async run(){ await dialogAsync({icon:false,text:'IS IT APPROPRIATE TO FEED\nYOUR COWORKER 17 EGGS?',buttons:[{label:'YES',cls:'default'},{label:'YES, W/ APPROVAL'}]}); } },
   // ---- AUTHORED PILEUPS: overlap IS the joke; they manage & clean up their own children ----
   { id:'dialogPileup', min:3, weight:2, async run(){
       const boxes=[];
@@ -634,7 +688,11 @@ function runChaosEvent(ev){
 }
 async function drainChaosEvents(){
   if(_eventActive) return;
-  const ev=_eventQueue.shift(); if(!ev) return;
+  if(!_eventQueue.length) return;
+  // never start a queued event while a dialog is still on screen (a lingering
+  // fire-and-forget flash from a prior event) — wait for it to be dismissed
+  if(dialogStack.length>0){ setTimeout(drainChaosEvents, 200); return; }
+  const ev=_eventQueue.shift();
   _eventActive=true;
   try{ await ev.run(); }catch(e){}      // event resolves only after its own cleanup
   _eventActive=false;
@@ -653,79 +711,185 @@ async function miniWander(){
   setShown(dom.mini,false); dom.mini.style.transform='';
 }
 
+/* ==========================================================================
+   FINALE ARCS — each Chaos run is secretly one of these little sketches.
+   phases fire at 25/50/75% of score/target; finale() at 100% then payoff.
+   ========================================================================== */
+const FINALE_ARCS = [
+  { id:'wife', title:'WHERE IS MY WIFE?', weight:3, minPlayCount:1,
+    async p25(c){ await sleep(300); await dialogAsync({icon:false,text:'WHERE IS MY WIFE?',buttons:[{label:'OK',cls:'default'}]}); },
+    async p50(c){ c._photo=prop('<rect class="ln" x="-34" y="-30" width="68" height="60" fill="#fff"/><ellipse class="eggbody" cx="0" cy="4" rx="15" ry="19"/>', EM.x+160, EM.y-50);
+      await dialogAsync({icon:false,text:'SHE WAS HERE WHEN\nI STARTED EATING.',buttons:[{label:'OK',cls:'default'}]}); },
+    async p75(c){ await EM.shake(); await dialogAsync({icon:false,text:'I’LL EAT AS MANY EGGS AS IT\nTAKES TO GET MY WIFE BACK.',buttons:[{label:'OK',cls:'default'}]}); },
+    async finale(c){ if(c._photo)c._photo.remove();
+      for(let i=0;i<2;i++){ await EM.walkTo(EM.HOMEX-90,480); await EM.walkTo(EM.HOMEX+90,480); } await EM.walkTo(EM.HOMEX,260);
+      const phone=prop('<rect class="ln" x="-15" y="-26" width="30" height="52" rx="8" fill="#fff"/>', EM.x+150, EM.y-20);
+      sound.error(); await sleep(500); sound.error();
+      await dialogAsync({icon:false,text:'RING. RING.',buttons:[{label:'ANSWER',cls:'default'}]}); phone.remove();
+      const wife=prop(EGGLET+'<path class="ln" d="M0,-58 l-12,-16 l24,0 z"/><ellipse class="ln" cx="34" cy="0" rx="10" ry="7" fill="#fff"/>', 1000, EM.y);
+      wife.style.transition='transform 1.3s steps(10)'; await sleep(30); wife.setAttribute('transform',`translate(${EM.x+170} ${EM.y})`); await sleep(1400);
+      dom.eggman.classList.add('walking'); await sleep(500); dom.eggman.classList.remove('walking');
+      await dialogAsync({icon:false,text:'I WASN’T MISSING.',buttons:[{label:'…',cls:'default'}]});
+      await dialogAsync({icon:false,text:'I LEFT YOU.',buttons:[{label:'…',cls:'default'}]});
+      await sleep(1500); EM.eating(true); await sleep(300); EM.eating(false);
+      await chaosPayoff(c, { endText:'YOU WON A NUDE EGG.', duringReveal:async()=>{
+        wife.style.transition='transform 1.4s steps(10)'; wife.setAttribute('transform',`translate(-140 ${EM.y})`); await sleep(1400); wife.remove(); } });
+    } },
+
+  { id:'divorce', title:'DIVORCE COURT', weight:2, minPlayCount:2,
+    async p25(c){ await dialogAsync({icon:false,text:'MRS. EGGMAN HAS\nRETAINED COUNSEL.',buttons:[{label:'OK',cls:'default'}]}); },
+    async p50(c){ c._judge=prop('<rect class="ln" x="-46" y="-24" width="92" height="54" fill="#fff"/><path class="ln" d="M-34,-24 q34,-26 68,0"/>', 720, 250);
+      c._split=prop('<line class="ln" x1="0" y1="360" x2="0" y2="470"/>', 785, 0);
+      await dialogAsync({icon:false,text:'THE BASKET IS DIVIDED.',buttons:[{label:'OK',cls:'default'}]}); },
+    async p75(c){ await dialogAsync({icon:false,text:'YOU ARE AWARDED\nVISITATION WITH\nEGGS #4 AND #17.',buttons:[{label:'OK',cls:'default'}]}); },
+    async finale(c){ await dialogAsync({icon:'*',text:'MRS. EGGMAN IS AWARDED:\nHOUSE. BASKET. PANTS.',buttons:[{label:'OK',cls:'default'}]});
+      setShown(dom.egPants,true); dom.egPants.style.transition='transform 1s steps(8)'; dom.egPants.style.transform='translateX(320px)'; await sleep(1100);
+      setShown(dom.egPants,false); dom.egPants.style.transition=''; dom.egPants.style.transform='translateY(0)';
+      if(c._judge)c._judge.remove(); if(c._split)c._split.remove();
+      await chaosPayoff(c, { skipPants:true, endText:'HE HAS NOTHING LEFT\nBUT NUDE EGG.' }); } },
+
+  { id:'poisoned', title:'POISONED BY MY CONSTITUENTS', weight:2, minPlayCount:2,
+    async p25(c){ await dialogAsync({icon:false,text:'I’VE BEEN POISONED\nBY MY CONSTITUENTS.',buttons:[{label:'OK',cls:'default'}]}); },
+    async p50(c){ await EM.shake(); c._doc=prop(EGGLET+'<circle class="eye" cx="0" cy="-46" r="9" fill="#fff"/>', 700, EM.y);
+      await dialogAsync({icon:false,text:'DOCTOR: STOP\nEATING EGGS.',buttons:[{label:'OK',cls:'default'}]}); },
+    async p75(c){ c._mon=prop('<rect class="ln" x="-70" y="-30" width="140" height="60" fill="#fff"/><polyline class="ln" points="-60,0 -30,0 -20,-20 -10,20 0,0 60,0"/>', 720, 150);
+      await dialogAsync({icon:false,text:'EACH EGG MAKES HIM\nBETTER, THEN WORSE.',buttons:[{label:'OK',cls:'default'}]}); },
+    async finale(c){ if(c._doc)c._doc.remove(); if(c._mon)c._mon.remove();
+      await EM.bend(80); sound.reveal(); await sleep(400); EM.place(EM.x, EM.HOMEY+55); await sleep(700);
+      await dialogAsync({icon:'*',text:'CAUSE OF DEATH:\nCONSTITUENTS.',buttons:[{label:'…',cls:'default'}]}); await sleep(700);
+      const e=prop(EGGLET, EM.x+140, EM.HOMEY+40); e.setAttribute('transform',`translate(${EM.x+140} ${EM.HOMEY+40}) scale(.6)`); await sleep(600);
+      EM.place(EM.x, EM.HOMEY); await EM.bend(0); EM.eating(true); await sleep(300); EM.eating(false); e.remove();
+      await chaosPayoff(c, { endText:'HE IS FINE NOW.\nNUDE EGG.' }); } },
+
+  { id:'hearing', title:'CONGRESSIONAL EGG HEARING', weight:2, minPlayCount:2,
+    async p25(c){ EM.tie(true); c._desk=prop('<rect class="ln" x="-95" y="0" width="190" height="60" fill="#fff"/>', EM.x, EM.HOMEY+72);
+      await dialogAsync({icon:false,text:'DID YOU KNOWINGLY CONSUME\n25 EGGS WHILE REPORTING SIX?',buttons:[{label:'OK',cls:'default'}]}); },
+    async p50(c){ await dialogAsync({icon:false,text:'I DO NOT RECALL\nTHE EGG.',buttons:[{label:'OK',cls:'default'}]}); },
+    async p75(c){ await dialogAsync({icon:false,text:'THAT NUMBER WAS\nPROVIDED TO ME.',buttons:[{label:'OK',cls:'default'}]});
+      await dialogAsync({icon:false,text:'I WAS ADVISED THAT\nWAS NOT AN EGG.',buttons:[{label:'OK',cls:'default'}]}); },
+    async finale(c){ if(c._desk)c._desk.remove(); EM.tie(false);
+      await dialogAsync({icon:'!',text:'EGGMAN IS FOUND\nIN CONTEMPT.',buttons:[{label:'OK',cls:'default'}]});
+      dom.eggman.classList.add('walking'); await sleep(700); dom.eggman.classList.remove('walking');
+      await chaosPayoff(c, { endText:'HE THINKS HE WON.\nNUDE EGG.' }); } },
+
+  { id:'heist', title:'THE HEIST', weight:2, minPlayCount:2,
+    async p25(c){ c._bp=prop('<rect class="ln" x="-50" y="-34" width="100" height="68" fill="#fff"/><line class="ln" x1="-40" y1="-10" x2="40" y2="-10"/><line class="ln" x1="0" y1="-30" x2="0" y2="26"/>', 720, 180);
+      await dialogAsync({icon:false,text:'I NEED ONE LAST EGG.',buttons:[{label:'OK',cls:'default'}]}); },
+    async p50(c){ c._mask=prop('<rect x="-40" y="-118" width="80" height="18" fill="#000"/>', EM.x, EM.y);
+      await dialogAsync({icon:false,text:'THE LASER GRID IS\nEXTREMELY ADVANCED.',buttons:[{label:'OK',cls:'default'}]}); },
+    async p75(c){ c._laser=prop('<line class="ln" x1="120" y1="300" x2="860" y2="330"/><line class="ln" x1="120" y1="360" x2="860" y2="342"/>',0,0);
+      await dialogAsync({icon:false,text:'PHASE ONE OF NINETEEN.',buttons:[{label:'OK',cls:'default'}]}); },
+    async finale(c){ if(c._laser)c._laser.remove(); if(c._bp)c._bp.remove();
+      await EM.walkTo(EM.HOMEX+60,1300); EM.eating(true); await sleep(300); EM.eating(false); if(c._mask)c._mask.remove();
+      await dialogAsync({icon:'*',text:'WE DID IT.',buttons:[{label:'OK',cls:'default'}]});
+      await EM.walkTo(480,900);
+      await chaosPayoff(c, { skipWalk:true, endText:'THE PERFECT HEIST.\nNUDE EGG.' }); } },
+
+  { id:'riddle', title:'HERE’S A RIDDLE FOR YOU, DICKWEED', weight:2, minPlayCount:2,
+    async p25(c){ c._cb=prop('<rect class="ln" x="-120" y="-70" width="240" height="140" fill="#fff"/>', 480, 175);
+      await dialogAsync({icon:false,text:'HERE’S A RIDDLE FOR\nYOU, DICKWEED.',buttons:[{label:'OK',cls:'default'}]});
+      await dialogAsync({icon:false,text:'I HAVE SIX FATHERS, NO\nDRIVEWAY, AND I AM LEGALLY\nA BOAT ON THURSDAYS.\nWHAT AM I?',buttons:[{label:'EGG'},{label:'DELAWARE'},{label:'I NEED AN ATTORNEY'}]});
+      await dialogAsync({icon:false,text:'WRONG.',buttons:[{label:'OK',cls:'default'}]}); },
+    async p50(c){ await dialogAsync({icon:false,text:'I AM MY OWN UNCLE.\nI NEVER HAD SIX FATHERS.\nI NEVER SAID BOAT.\nWHAT AM I?',buttons:[{label:'EGG'},{label:'STILL DELAWARE'}]});
+      await dialogAsync({icon:false,text:'WRONG.',buttons:[{label:'OK',cls:'default'}]}); },
+    async p75(c){ await dialogAsync({icon:false,text:'FORGET THE FATHERS.\nTHERE IS NO THURSDAY.\nI AM AFRAID OF THE NUMBER\nYOU ARE THINKING OF.',buttons:[{label:'EGG?'},{label:'A BOAT'}]});
+      await dialogAsync({icon:false,text:'WRONG.',buttons:[{label:'OK',cls:'default'}]}); },
+    async finale(c){ await dialogAsync({icon:false,text:'I DON’T KNOW EITHER.',buttons:[{label:'OK',cls:'default'}]});
+      await dialogAsync({icon:'!',text:'YOU WASTED MY TIME,\nDICKWEED.',buttons:[{label:'OK',cls:'default'}]});
+      const t=document.createElementNS('http://www.w3.org/2000/svg','text'); t.setAttribute('x','480'); t.setAttribute('y','190'); t.setAttribute('text-anchor','middle'); t.setAttribute('font-size','44'); t.setAttribute('font-weight','700'); t.textContent='EGG?'; dom.props.appendChild(t);
+      await dialogAsync({icon:false,text:'INCORRECT.',buttons:[{label:'OK',cls:'default'}]});
+      await chaosPayoff(c, { endText:'NO ONE WON.\nNUDE EGG.' }); } }
+];
+
+/* ---- selection with no-consecutive-repeat / recent-avoidance ---- */
+function pickArc(pc){ const elig=FINALE_ARCS.filter(a=>pc>=(a.minPlayCount||0));
+  let pool=elig.filter(a=>a.id!==_recentFinales[_recentFinales.length-1]); if(!pool.length) pool=elig.length?elig:FINALE_ARCS;
+  const a=pickWeighted(pool); _recentFinales.push(a.id); if(_recentFinales.length>4)_recentFinales.shift(); return a; }
+function pickMinor(pc){ const elig=MINOR_EVENTS.filter(e=>pc>=(e.min||0));
+  let pool=elig.filter(e=>!_recentMinors.includes(e.id)); if(!pool.length) pool=elig;
+  const e=pool.length?pickWeighted(pool):null; if(e){ _recentMinors.push(e.id); if(_recentMinors.length>6)_recentMinors.shift(); } return e; }
+function pickTarget(){ let t,tries=0; do{ t=90+rand(151); }while(Math.abs(t-_lastTarget)<30 && tries++<8); _lastTarget=t; return t; }
+
+/* ---- milestone dispatch (arc beats take priority over minors) ---- */
+function checkMilestones(c){
+  const pct=c.score/c.target, marks=[[0.25,'p25'],[0.5,'p50'],[0.75,'p75'],[1,'finale']];
+  for(const [thr,key] of marks){ if(pct>=thr && !c.fired.has(key)){ c.fired.add(key); c.log.push('arc:'+key);
+    if(key==='finale'){ c.finaleTriggered=true; clearChaosEvents(); runChaosEvent({id:'arc:finale', async run(){ await c.arc.finale(c); }}); }
+    else { runChaosEvent({id:'arc:'+key, async run(){ await c.arc[key](c); }}); resetMinorCooldown(c); } } }
+}
+
+/* ---- minor-event pressure timing (irregular gaps) ---- */
+function resetMinorCooldown(c){ c.lastEventTime=performance.now(); c.feedsSinceEvent=0; c.cooldownFeeds=2+rand(4); c.cooldownMs=3000+rand(6000); c.minorChance=0; }
+function maybeFireMinor(c){
+  if(chaosBusy() || c.feedsSinceEvent<c.cooldownFeeds || (performance.now()-c.lastEventTime)<c.cooldownMs) return;
+  c.minorChance=Math.min(0.85, c.minorChance+0.2);
+  if(chance(c.minorChance)){ const ev=pickMinor(saveState.playCount); if(ev){ c.log.push('minor:'+ev.id); resetMinorCooldown(c); runChaosEvent(ev); } }
+}
+
+/* ---- the payoff (shared; finales pass variations) ---- */
+async function chaosPayoff(c, opts={}){
+  c.done=true; feedingLocked=true; ui.setTitle('EGG'); clearChaosEvents(); clearEggs();
+  // a light layer of the beloved payoff mutations on top of any arc variation
+  const muts = shuffle(['walkPast','turnTwice','buttHat','rate','giantBush','pantsBackOn']).slice(0, rand(3));
+  const has = (m)=>muts.includes(m);
+  if(!opts.skipWalk){
+    if(has('walkPast')){ await EM.walkTo(1040,1400); await sleep(250); await EM.walkTo(480,1300); }
+    else await EM.walkTo(480,1400);
+    await sleep(300);
+  }
+  if(!opts.skipPants){ await EM.dropPants(); if(has('pantsBackOn')){ await sleep(300); await EM.raisePants(); await sleep(250); await EM.dropPants(); } }
+  EM.bush(true); if(has('giantBush')) EM.bigBush(true); await sleep(900); EM.bush(false); EM.bigBush(false);
+  if(has('turnTwice')){ await EM.turn(true); await EM.turn(false); await EM.turn(true); } else await EM.turn(true);
+  sound.reveal();
+  await EM.bend(true);
+  if(has('buttHat')) EM.buttHat(true);
+  if(opts.duringReveal){ try{ await opts.duringReveal(); }catch(e){} }
+  await sleep(2200);
+  if(has('rate')) showDialog({icon:false,text:'RATE THIS EGG:\n★★★★★',at:{x:740,y:150},buttons:[{label:'OK'}]});
+  await dialogAsync({ icon:false, text:opts.endText || pick(END_MESSAGES), buttons:[{label:'PLAY AGAIN',cls:'default'}] });
+  saveState.playCount += 1; persist();
+  startChaos();
+}
+
 function startChaos(){
   resetPresentation();
-  _eventActive=false; clearChaosEvents();   // fresh scheduler each run
-  const pc = saveState.playCount;   // completed runs so far
-  const c = { disp:0, feeds:0, forceAt:7+rand(8), startT:Date.now(),
-              lastMsgFeed:-5, done:false, firstEggIs41:false, refuseFirst:false, schedule:new Map() };
-
+  _eventActive=false; clearChaosEvents();      // fresh scheduler each run
+  const pc = saveState.playCount;
+  const arc = pickArc(pc);
+  const c = { score:0, disp:0, target:pickTarget(), feeds:0, done:false, finaleTriggered:false,
+              arc, fired:new Set(), startT:Date.now(), log:[],
+              lastEventTime:0, feedsSinceEvent:0, cooldownFeeds:2+rand(4), cooldownMs:3000+rand(6000), minorChance:0 };
+  _chaos = c;
   refillBasket(5);
 
-  // choose a handful of events for this run (more, and weirder, as playCount grows)
-  const nEvents = pc<=1 ? 2 : pc===2 ? (3+rand(2)) : (3+rand(4));   // 2, 3-4, 3-6
-  const eligible = shuffle(CHAOS_EVENTS.filter(ev => pc >= ev.min));
-  const chosen = [];
-  for(const ev of eligible){ if(chosen.length>=nEvents) break; chosen.push(ev); }
-  // spread them over feeds 1..(forceAt-1)
-  chosen.forEach((ev,i) => { const f = 1 + Math.floor((i+1) * (c.forceAt-1) / (chosen.length+1));
-    if(!c.schedule.has(f)) c.schedule.set(f, ev); else c.schedule.set(f+1, ev); });
-
-  // rare opening easter eggs
-  const roll = Math.random(); let opened=false;
-  if(roll < 0.010){ opened=true; showDialog({text:'THIS IS NOT EGG GAME.',buttons:[{label:'OK',cls:'default'}]}); }
-  else if(roll < 0.020){ opened=true; feedingLocked=true; showDialog({text:'YOU WIN.',buttons:[{label:'OK',cls:'default',onClick(){ chaosEnding(c); }}]}); }
-  else if(roll < 0.030){ opened=true; ui.setCounter('42 EGGS'); showDialog({text:'42 EGGS.\nYOU LOSE.',buttons:[{label:'OK',cls:'default',onClick(){ ui.setCounter('0 EGGS'); }}]}); }
-  else if(roll < 0.040){ c.firstEggIs41=true; }
-  else if(roll < 0.050){ c.refuseFirst=true; }
-
-  if(!opened && pc>=2 && chance(0.35))
-    setTimeout(()=>showDialog({icon:false,text:pick(REPEAT_MESSAGES),buttons:[{label:'OK',cls:'default'}]}), 400);
+  if(pc>=2 && chance(0.30)) setTimeout(()=>{ if(!c.done && !chaosBusy()) showDialog({icon:false,text:pick(REPEAT_MESSAGES),buttons:[{label:'OK',cls:'default'}]}); }, 450);
+  else if(chance(0.012)) setTimeout(()=>{ if(!c.done && !chaosBusy()) showDialog({text:'THIS IS NOT EGG GAME.',buttons:[{label:'OK',cls:'default'}]}); }, 500);
 
   activeController = { feedEgg(){
-    if(c.done) return;
-    c.feeds++;
-
-    if(c.refuseFirst && c.feeds===1){ c.refuseFirst=false; c.feeds--;
-      EM.shake(); showDialog({text:pick(['WRONG EGG.','NO.','EGG NOT FOUND.']),buttons:[{label:'OK',cls:'default'}]}); return; }
-    if(c.firstEggIs41 && c.feeds===1){ c.disp=41; render(); return chaosWin(c); }
-
-    const v = weighted(EGG_VALUES);
-    if(!chance(0.10)) c.disp += v;
-    if(c.disp<0 && chance(0.5)) c.disp=0;
-    render(chance(0.06));
-
-    // scheduled event OR a system message this feed — never both, and majors
-    // only when nothing else is on screen (prevents accidental pileups)
-    const ev = c.schedule.get(c.feeds);
-    if(ev){ c.schedule.delete(c.feeds);
-      if(ev.allowOverlap || !chaosBusy()) runChaosEvent(ev);        // minor anytime; major only when idle
-    } else if(!chaosBusy() && c.feeds - c.lastMsgFeed >= 2 && chance(0.28)){
-      c.lastMsgFeed=c.feeds; showDialog({icon:false,text:pick(SYS_MESSAGES),buttons:[{label:'OK',cls:'default'}]});
-    }
-
-    // random out-of-eggs -> weird pack (not while something else is active)
-    if(!chaosBusy() && c.feeds>=2 && chance(0.12)) return outOfEggsChaos(c);
-
-    // win conditions — hard wins always fire (completability); soft wins wait for a quiet moment
-    if(c.disp>=41) return chaosWin(c);
-    if(c.feeds>=c.forceAt || (Date.now()-c.startT)>110000) return chaosWin(c);
-    if(!chaosBusy()){
-      if(c.disp===6 && chance(0.20)) return chaosWin(c);
-      if(v===-1 && chance(0.15)) return chaosWin(c);
-      if(chance(0.04)) return chaosWin(c);
-    }
-
+    if(c.done || c.finaleTriggered) return;
+    c.feeds++; c.feedsSinceEvent++;
+    const v = normalEggValue();
+    c.score += v;                                     // reliable hidden progression
+    // the displayed counter lies freely
+    if(chance(0.15)) ui.setCounter(pick(DISPLAY_LIES));
+    else { if(chance(0.78)) c.disp += v; else c.disp += rand(9)-4; ui.setCounter(ui.eggsPlural(c.disp)); }
+    // safety: never strand the player
+    if(c.feeds>=30 || (Date.now()-c.startT)>150000) c.score = Math.max(c.score, c.target);
+    // arc beats first (take priority)
+    checkMilestones(c);
+    if(c.finaleTriggered) return;
+    // occasional out-of-eggs (respects cooldown/scheduler)
+    if(!chaosBusy() && c.feedsSinceEvent>=c.cooldownFeeds && c.feeds>=2 && chance(0.10)){ resetMinorCooldown(c); return outOfEggsChaos(c); }
+    // pressure-based minor event
+    maybeFireMinor(c);
     refillBasket(5);
   }};
-
-  function render(textCounter){ ui.setCounter(textCounter ? 'EGG' : ui.eggsPlural(c.disp)); }
 }
 
 function outOfEggsChaos(c){
   const packSize = weighted(PACKS);
   const resume = (msg) => { refillBasket(4+rand(3)); feedingLocked=false; if(msg) showDialog({icon:false,text:msg,buttons:[{label:'OK',cls:'default'}]}); };
-  feedingLocked = true; clearEggs();
+  feedingLocked = true; clearEggs(); if(c&&c.log) c.log.push('outOfEggs');
   showDialog({ icon:'!', text:'OUT OF EGGS.\n\nBUY '+packSize+' PACK OF EGGS?',
     buttons:[
       { label:'YES', cls:'default', onClick(){ sound.pack(); resume(weighted([['80 EGGS.',5],['3 EGGS.',2],['160 EGGS.',1],['0 EGGS.',1]])); } },
@@ -735,72 +899,6 @@ function outOfEggsChaos(c){
           else if(n==='lose'){ c.disp-=1; ui.setCounter(ui.eggsPlural(c.disp)); resume(null); }
           else outOfEggsChaos(c); } }
     ]});
-}
-
-function chaosWin(c){
-  if(c.done) return; c.done=true; feedingLocked=true;
-  clearChaosEvents();                       // no queued events fire over the payoff
-  ui.setCounter('41 EGGS'); ui.setTitle('EGG'); sound.win();
-  // wait for any in-flight event/dialog to clear so YOU WIN never stacks (cap ~6s)
-  const showWin=()=>showDialog({icon:false,text:'YOU WIN',buttons:[{label:'OK',cls:'default',onClick(){ chaosEnding(c); }}]});
-  (function waitIdle(tries){ if((!_eventActive && dialogStack.length===0) || tries>40){ setTimeout(showWin,300); }
-    else setTimeout(()=>waitIdle(tries+1),150); })(0);
-}
-
-/* Chaos ending: the pants/butt sequence, mutated by a few curated twists. */
-async function chaosEnding(c){
-  feedingLocked = true; ui.setTitle('EGG');
-  clearEggs();
-  const muts = shuffle(['walkPast','pantsEarly','doublePants','pantsUp','turnTwice','wrongBend',
-                        'wrongSide','pantsBackOn','miniWatch','longWalk','victoryEarly','giantBush','buttHat','rate'])
-                 .slice(0, 1+rand(3));
-  const has = (m)=>muts.includes(m);
-
-  if(has('miniWatch')){ setShown(dom.mini,true); dom.mini.style.transform='translate(90px,150px)'; }
-
-  // walk to center (maybe absurdly)
-  if(has('longWalk')){ await EM.walkTo(EM.HOMEX+40, 3000); }
-  else if(has('walkPast')){ await EM.walkTo(1040,1500); await sleep(300); await EM.walkTo(480,1400); }
-  else { await EM.walkTo(480,1500); }
-  await sleep(400);
-
-  if(has('pantsEarly')){ /* already could have dropped; just drop now emphatically */ }
-  if(has('pantsUp')){ await EM.dropPantsUp(); }
-  else { await EM.dropPants(); }
-  if(has('doublePants')){ await sleep(150); await EM.dropPants(); }
-
-  EM.bush(true);
-  if(has('giantBush')){ EM.bigBush(true); }
-  await sleep(1000);
-  EM.bush(false); EM.bigBush(false);
-
-  if(has('turnTwice')){ await EM.turn(true); await EM.turn(false); await EM.turn(true); }
-  else { await EM.turn(true); }
-  sound.reveal();
-
-  if(has('victoryEarly')){ showDialog({icon:false,text:'YOU WIN',buttons:[{label:'OK',cls:'default'}]}); await sleep(700); }
-
-  if(has('wrongBend')){ await EM.bend(-30);
-      await dialogAsync({text:'WRONG SIDE',buttons:[{label:'OK',cls:'default'}]}); await EM.bend(30); }
-  else { await EM.bend(true); }
-
-  if(has('wrongSide')){ await dialogAsync({text:'WRONG SIDE',buttons:[{label:'OK',cls:'default'}]}); }
-  if(has('buttHat')){ EM.buttHat(true); }
-
-  if(has('pantsBackOn')){ await sleep(500); await EM.raisePants(); await sleep(300); await EM.dropPants(); }
-
-  await sleep(2400);
-
-  if(has('rate')){ showDialog({icon:false,text:'RATE THIS EGG:\n★★★★★',at:{x:720,y:150},buttons:[{label:'OK'}]}); }
-
-  // ending message — smaller birthday references, occasionally the porn line
-  let text = pick(END_MESSAGES);
-  if(chance(0.16)) text = 'YOU WON A NUDE EGG.\n\nYOU SHOULD BE ABLE TO LOOK AT\nA LITTLE PORN AT WORK.';
-  else if(chance(0.15)) text = 'EGGMAN REMEMBERS YOUR\nBIRTHDAY, '+birthdayConfig.sisterName+'.';
-  await dialogAsync({ icon:false, text, buttons:[{label:'PLAY AGAIN',cls:'default'}] });
-
-  saveState.playCount += 1; persist();
-  startChaos();
 }
 
 /* ==========================================================================
@@ -878,7 +976,9 @@ window.EGG = {
   locked(){ return feedingLocked; },
   eggs(){ return [...dom.play.querySelectorAll('.egg')]; },
   mouth(){ return getMouthEatRect(); },
-  getMouthDebug(){ return _mouthDebug; }
+  getMouthDebug(){ return _mouthDebug; },
+  chaosInfo(){ return _chaos && { arc:_chaos.arc.id, target:_chaos.target, score:_chaos.score,
+    feeds:_chaos.feeds, disp:_chaos.disp, fired:[..._chaos.fired], done:_chaos.done, log:_chaos.log.slice() }; }
 };
 
 if('serviceWorker' in navigator){
