@@ -573,6 +573,14 @@ let _recentFinales=[], _recentMinors=[], _lastTarget=0, _chaos=null;
 function prop(svg, tx, ty){ const g=document.createElementNS('http://www.w3.org/2000/svg','g');
   g.innerHTML=svg; if(tx!=null) g.setAttribute('transform',`translate(${tx} ${ty||0})`); dom.props.appendChild(g); return g; }
 const EGGLET = '<path class="eggbody" d="M0,-52 C-26,-52 -36,-26 -36,-8 C-36,14 -20,14 0,14 C20,14 36,14 36,-8 C36,-26 26,-52 0,-52 Z"/><circle class="eye" cx="-10" cy="-30" r="5"/><circle class="eye" cx="10" cy="-30" r="5"/><ellipse class="mouth" cx="0" cy="-10" rx="11" ry="9"/><line class="ln" x1="-12" y1="14" x2="-12" y2="30"/><line class="ln" x1="12" y1="14" x2="12" y2="30"/>';
+/* an SVG <text> label prop (createElementNS so it renders reliably) */
+function labelProp(x,y,str,size,rot){ const t=document.createElementNS('http://www.w3.org/2000/svg','text');
+  t.setAttribute('x',x); t.setAttribute('y',y); t.setAttribute('text-anchor','middle'); t.setAttribute('font-size',size||18); t.setAttribute('font-weight','700');
+  if(rot) t.setAttribute('transform',`rotate(${rot} ${x} ${y})`); t.textContent=str; dom.props.appendChild(t); return t; }
+/* a little Eggman that carries its own label (for time-travel doubles etc.) */
+function futureEggman(x,y,labelStr,extra){ const g=prop(EGGLET+(extra||''), x, y);
+  const t=document.createElementNS('http://www.w3.org/2000/svg','text'); t.setAttribute('x','0'); t.setAttribute('y','-70');
+  t.setAttribute('text-anchor','middle'); t.setAttribute('font-size','15'); t.setAttribute('font-weight','700'); t.textContent=labelStr; g.appendChild(t); return g; }
 const SYS_MESSAGES = ['EGG ACCEPTED.','THAT WAS AN EGG.','THAT EGG DIDN’T COUNT.','THAT EGG COUNTED TWICE.',
   'THIS EGG IS 17 EGGS.','EGG NOT FOUND.','YOU HAVE TOO MANY EGGS.','YOU LOST 4 EGGS.','EGGMAN HAS NOTICED.',
   'HE NEEDS THIS.','PLEASE KEEP FEEDING HIM.','WRONG EGG.','EGG TOTAL UNAVAILABLE.','THE NUMBER IS CORRECT.',
@@ -625,8 +633,12 @@ const MINOR_EVENTS = [
   { id:'adventure365', min:2, weight:2, async run(){
       await dialogAsync({icon:false,text:'MIKE FROM ADVENTURE 365\nSAYS YOU’RE WRENCHING\nON THE ZIPLINE.',buttons:[{label:'SHUT UP, MIKE',cls:'default'},{label:'CARLOS IS A HO'}]});
       await dialogAsync({icon:false,text:'CARMELLO SAYS YOUR FACE\nLOOKS LIKE A CLOCK.',buttons:[{label:'OK',cls:'default'}]}); } },
-  { id:'danFlashes', min:2, weight:2, async run(){ addBasketEgg({}); await dialogAsync({icon:false,text:'THIS EGG COSTS $4,000.\nTHE PATTERN IS VERY\nCOMPLICATED.',buttons:[{label:'OK',cls:'default'}]}); } },
-  { id:'sloppyMudpie', min:2, weight:2, async run(){ await dialogAsync({icon:false,text:'ONE EGG IS QUARANTINED.\nSOMEBODY MADE A\nSLOPPY MUDPIE.',buttons:[{label:'OK',cls:'default'}]}); } },
+  { id:'danFlashes', min:2, weight:2, async run(){ const e=addBasketEgg({}); const n=6+rand(12);
+      if(e){ const svg=e.querySelector('svg'); for(let i=0;i<n;i++){ const c=document.createElementNS('http://www.w3.org/2000/svg','circle'); c.setAttribute('cx',8+rand(36)); c.setAttribute('cy',10+rand(44)); c.setAttribute('r',1.4+rand(2)); c.setAttribute('fill','#000'); svg.appendChild(c); } }
+      await dialogAsync({icon:false,text:'THIS EGG COSTS $'+(n*617).toLocaleString()+'.\nTHE PATTERN IS VERY\nCOMPLICATED.',buttons:[{label:'OK',cls:'default'}]}); } },
+  { id:'sloppyMudpie', min:2, weight:2, async run(){ await dialogAsync({icon:'!',text:'YOU SHOULDN’T’VE HAD\nSUCH A SLOPPY MUDPIE.',buttons:[{label:'OK',cls:'default'}]});
+      const e=addBasketEgg({}); const box=prop('<rect class="ln" x="-30" y="-42" width="60" height="72" fill="#fff"/>', e?e._homeX:780, (e?e._homeY:352)-6);
+      await dialogAsync({icon:'!',text:'EGG QUARANTINED:\nHAZARDOUS MATERIAL.',buttons:[{label:'OK',cls:'default'}]}); box.remove(); } },
   { id:'tables', min:2, weight:2, async run(){ await dialogAsync({icon:false,text:'TODAY WE WILL LEARN\nABOUT TABLES.',buttons:[{label:'OK',cls:'default'}]});
       await dialogAsync({icon:false,text:'THIS HAS NOTHING\nTO DO WITH EGGS.',buttons:[{label:'OK',cls:'default'}]}); } },
   { id:'turboTeam', min:2, weight:2, async run(){ const x=EM.x; for(let i=0;i<2;i++){ await EM.walkTo(x-120,300); await EM.walkTo(x+120,300); } await EM.walkTo(x,250);
@@ -642,9 +654,13 @@ const MINOR_EVENTS = [
   { id:'hotDog', min:2, weight:2, async run(){ const car=prop('<rect class="ln" x="-40" y="-14" width="80" height="26" rx="12" fill="#fff"/><circle class="eye" cx="-22" cy="14" r="9"/><circle class="eye" cx="22" cy="14" r="9"/>', -80, 250);
       car.style.transition='transform 1.2s linear'; await sleep(30); car.setAttribute('transform','translate(1040 250)'); await sleep(1250); car.remove();
       await dialogAsync({icon:false,text:'WE’RE ALL TRYING TO FIND\nWHO DID THIS.',buttons:[{label:'OK',cls:'default'}]}); } },
-  { id:'fullyLoaded', min:2, weight:2, async run(){ await dialogAsync({icon:false,text:'YOU GAVE HIM ALL THE\nFULLY-LOADED EGGS.',buttons:[{label:'OK',cls:'default'}]}); } },
-  { id:'order55', min:2, weight:2, async run(){ const b=showDialog({icon:false,text:'55 EGGS. 55 EGGS. 55 EGGS.',buttons:[]}); await sleep(1400);
-      b.querySelector('.dlg-text').textContent='YOU HAVE 3 EGGS.'; await sleep(1100); closeDialog(b); } },
+  { id:'fullyLoaded', min:2, weight:2, async run(){ const eggs=[...dom.play.querySelectorAll('.egg:not(.gag)')].slice(0,3);
+      eggs.forEach(e=>{ const svg=e.querySelector('svg'); for(let i=0;i<4;i++){ const c=document.createElementNS('http://www.w3.org/2000/svg','circle'); c.setAttribute('cx',12+rand(28)); c.setAttribute('cy',14+rand(30)); c.setAttribute('r',2+rand(2)); c.setAttribute('fill','#000'); svg.appendChild(c); } });
+      await dialogAsync({icon:false,text:'YOU GAVE HIM ALL THE\nFULLY-LOADED EGGS.',buttons:[{label:'OK',cls:'default'}]}); } },
+  { id:'order55', min:2, weight:2, async run(){ const b=showDialog({icon:false,text:'ORDERING…',buttons:[]});
+      for(let i=0;i<14;i++){ b.querySelector('.dlg-text').textContent=rand(900)+' EGGS'; await sleep(110); }
+      b.querySelector('.dlg-text').textContent='ORDER: 55 EGGS'; await sleep(650);
+      b.querySelector('.dlg-text').textContent='YOU HAVE 3 EGGS.'; await sleep(1000); closeDialog(b); } },
   // ---- ORIGINAL office/computer nonsense ----
   { id:'eggUpdateFoot', min:2, weight:2, async run(){ const b=showDialog({icon:false,text:'INSTALLING EGG UPDATE',bar:true,barDur:1400,buttons:[]}); await sleep(1700); closeDialog(b);
       const f=document.querySelector('#eg-leg-r .foot'); if(f){ f.setAttribute('rx','34'); }  /* one foot 2px longer, forever */ } },
@@ -660,6 +676,38 @@ const MINOR_EVENTS = [
   { id:'wrongDept', min:2, weight:2, async run(){ EM.eating(true); await sleep(260); EM.eating(false); addBasketEgg({});
       await dialogAsync({icon:false,text:'THIS EGG BELONGS\nTO PAYROLL.',buttons:[{label:'OK',cls:'default'}]}); } },
   { id:'compliance', min:2, weight:2, async run(){ await dialogAsync({icon:false,text:'IS IT APPROPRIATE TO FEED\nYOUR COWORKER 17 EGGS?',buttons:[{label:'YES',cls:'default'},{label:'YES, W/ APPROVAL'}]}); } },
+  // ---- newly-added VISUAL minor events ----
+  { id:'tcTuggers', min:2, weight:2, async run(){ const k=prop('<circle class="ln" cx="0" cy="0" r="9" fill="#fff"/>', EM.x, EM.y-18);
+      await dialogAsync({icon:false,text:'THIS IS NOT A JOKE.',buttons:[{label:'TUG',cls:'default'}]}); k.setAttribute('transform',`translate(${EM.x} ${EM.y-8})`); await sleep(300); k.remove(); } },
+  { id:'briansEgg', min:2, weight:2, async run(){ const e=addBasketEgg({}); const sx=e?e._homeX:780, sy=e?e._homeY:352;
+      const hat=prop('<ellipse class="ln" cx="0" cy="0" rx="46" ry="10" fill="#fff"/><path class="ln" d="M-26,0 q26,-40 52,0" fill="#fff"/>', sx, sy-24);
+      await dialogAsync({icon:false,text:'WHY IS THAT EGG\nWEARING THAT HAT?',buttons:[{label:'I DON’T KNOW',cls:'default'},{label:'WHAT HAT?'}]});
+      await dialogAsync({icon:false,text:'INTERESTING.',buttons:[{label:'OK',cls:'default'}]}); hat.remove(); } },
+  { id:'bozoEgg', min:3, weight:2, async run(){ const g=prop(EGGLET, 660, EM.y); const mouth=g.querySelector('.mouth');
+      const say=async(t)=>{ let n=0; const iv=setInterval(()=>mouth.setAttribute('ry',(n++%2)?15:6),150);
+        await dialogAsync({icon:false,text:t,buttons:[{label:'OK',cls:'default'}]}); clearInterval(iv); mouth.setAttribute('ry','9'); };
+      await say('HELLO. I AM ALSO EGG.'); await say('THE EGG IS FOR THE EGG.'); g.remove(); } },
+  { id:'juryDuty', min:2, weight:2, async run(){ const e=addBasketEgg({}); if(!e) return;
+      e.classList.add('snap'); positionEgg(e,-60,e._homeY); await sleep(700); positionEgg(e,e._homeX,e._homeY);
+      const tie=prop('<path class="ln" d="M0,0 l-5,6 l5,20 l5,-20 z"/>', e._homeX, e._homeY-6);
+      await dialogAsync({icon:false,text:'THE EGG CANNOT\nDISCUSS THE CASE.',buttons:[{label:'OK',cls:'default'}]}); tie.remove(); } },
+  { id:'managementEgg', min:2, weight:2, async run(){ const e=addBasketEgg({}); const sx=e?e._homeX:780, sy=e?e._homeY:352;
+      const tie=prop('<path class="ln" d="M0,0 l-5,6 l5,20 l5,-20 z"/>', sx, sy-6); await sleep(1700);
+      await dialogAsync({icon:false,text:'MANAGEMENT IS PLEASED.',buttons:[{label:'OK',cls:'default'}]}); tie.remove(); } },
+  { id:'eggUnion', min:2, weight:2, async run(){ clearEggs();
+      const s1=prop('<rect class="ln" x="-20" y="-42" width="40" height="24" fill="#fff"/><line class="ln" x1="0" y1="-18" x2="0" y2="22"/>', 740, 300);
+      const s2=prop('<rect class="ln" x="-20" y="-42" width="40" height="24" fill="#fff"/><line class="ln" x1="0" y1="-18" x2="0" y2="22"/>', 830, 300);
+      await dialogAsync({icon:false,text:'THE EGGS HAVE UNIONIZED.\nDEMANDS: 1 EXTRA PIXEL,\nLUNCH, NO MORE 40-EGG\nINCIDENTS.',buttons:[{label:'NEGOTIATE',cls:'default'}]});
+      await sleep(1100); await dialogAsync({icon:false,text:'AGREEMENT REACHED.',buttons:[{label:'OK',cls:'default'}]});
+      s1.remove(); s2.remove(); refillBasket(5); } },
+  { id:'prevTimeline', min:2, weight:2, async run(){ const e=addBasketEgg({}); if(e) e.style.opacity='0.5';
+      await dialogAsync({icon:false,text:'THIS EGG WAS ALREADY EATEN\nIN ANOTHER TIMELINE.',buttons:[{label:'OK',cls:'default'}]});
+      const ghost=prop(EGGLET, EM.x, EM.y-40); ghost.style.opacity='0.4'; await sleep(900); ghost.remove(); } },
+  { id:'didntDo', min:2, weight:2, async run(){ await dialogAsync({icon:'!',text:'SYSTEM ERROR.',buttons:[{label:'OK',cls:'default'}]});
+      EM.arm3(true); setT(dom.egTorso,'rotate(-6 0 30)');
+      await dialogAsync({icon:false,text:'I DIDN’T DO SHIT.\nI DIDN’T DO FUCKING SHIT.',buttons:[{label:'OK',cls:'default'}]});
+      await dialogAsync({icon:false,text:'NO ONE ACCUSED YOU.',buttons:[{label:'OK',cls:'default'}]});
+      EM.arm3(false); setT(dom.egTorso,null); } },
   // ---- AUTHORED PILEUPS: overlap IS the joke; they manage & clean up their own children ----
   { id:'dialogPileup', min:3, weight:2, async run(){
       const boxes=[];
@@ -798,7 +846,102 @@ const FINALE_ARCS = [
       await dialogAsync({icon:'!',text:'YOU WASTED MY TIME,\nDICKWEED.',buttons:[{label:'OK',cls:'default'}]});
       const t=document.createElementNS('http://www.w3.org/2000/svg','text'); t.setAttribute('x','480'); t.setAttribute('y','190'); t.setAttribute('text-anchor','middle'); t.setAttribute('font-size','44'); t.setAttribute('font-weight','700'); t.textContent='EGG?'; dom.props.appendChild(t);
       await dialogAsync({icon:false,text:'INCORRECT.',buttons:[{label:'OK',cls:'default'}]});
-      await chaosPayoff(c, { endText:'NO ONE WON.\nNUDE EGG.' }); } }
+      await chaosPayoff(c, { endText:'NO ONE WON.\nNUDE EGG.' }); } },
+
+  { id:'murder', title:'EGG MURDER', weight:2, minPlayCount:2,
+    async p25(c){ c._greg=prop(EGGLET+'<rect class="ln" x="-20" y="-64" width="40" height="14" fill="#fff"/>', 720, 300);
+      await dialogAsync({icon:false,text:'THIS IS GREG.',buttons:[{label:'OK',cls:'default'}]}); },
+    async p50(c){ const dark=prop('<rect x="0" y="0" width="960" height="540" fill="#000"/>',0,0); sound.error(); await sleep(450); dark.remove();
+      if(c._greg){ c._greg.innerHTML=EGGLET+'<line class="ln" x1="-18" y1="-18" x2="2" y2="2"/><line class="ln" x1="2" y1="2" x2="-12" y2="16"/><line class="ln" x1="2" y1="2" x2="20" y2="-6"/>'; c._greg.setAttribute('transform','translate(720 440) rotate(90)'); }
+      sound.error(); await dialogAsync({icon:'!',text:'DO NOT TOUCH GREG.',buttons:[{label:'OK',cls:'default'}]});
+      await EM.turn(true); await sleep(250); await EM.turn(false); },
+    async p75(c){ c._det=prop(EGGLET+'<rect class="ln" x="-30" y="-8" width="60" height="42" fill="#fff"/><rect class="ln" x="-22" y="-62" width="44" height="16" fill="#fff"/><circle class="ln" cx="36" cy="2" r="12" fill="#fff"/><line class="ln" x1="45" y1="11" x2="58" y2="24"/>', 620, 300);
+      for(const q of ['I DON’T KNOW GREG.','GREG WAS LIKE THAT.','I WAS EATING OTHER EGGS.','I HAVE NEVER BEEN\nIN THIS ROOM.']){ await dialogAsync({icon:false,text:q,buttons:[{label:'OK',cls:'default'}]}); await EM.shake(); }
+      EM.arm3(true); },
+    async finale(c){ if(c._det)c._det.remove(); EM.arm3(false);
+      const line=[]; for(let i=0;i<4;i++) line.push(prop(EGGLET, 230+i*120, 300));
+      await dialogAsync({icon:false,text:'IDENTIFY THE MURDERER.',buttons:[{label:'OK',cls:'default'}]});
+      if(c._greg){ c._greg.innerHTML=EGGLET; c._greg.setAttribute('transform','translate(470 300)'); }
+      await dialogAsync({icon:false,text:'I’M HARD BOILED.',buttons:[{label:'…',cls:'default'}]}); await sleep(900);
+      await dialogAsync({icon:false,text:'THAT DOESN’T EXPLAIN\nANYTHING.',buttons:[{label:'OK',cls:'default'}]});
+      line.forEach(p=>p.remove()); if(c._greg)c._greg.remove();
+      await chaosPayoff(c, { endText:'CASE CLOSED.\nNUDE EGG.', duringReveal:async()=>{
+        const cam=prop('<rect class="ln" x="-20" y="-14" width="40" height="28" fill="#fff"/><circle class="ln" cx="0" cy="0" r="8" fill="#fff"/>', 630, 300);
+        const flash=prop('<rect x="0" y="0" width="960" height="540" fill="#fff"/>',0,0); sound.pickup(); await sleep(120); flash.remove();
+        await sleep(600); cam.remove(); } }); } },
+
+  { id:'audit', title:'EGG AUDIT', weight:2, minPlayCount:2,
+    async p25(c){ c._aud=prop(EGGLET+'<rect class="ln" x="18" y="-20" width="34" height="46" fill="#fff"/>', 680, 300);
+      await dialogAsync({icon:false,text:'WE NEED TO TALK ABOUT\nTHE SIX EGGS.',buttons:[{label:'OK',cls:'default'}]}); },
+    async p50(c){ const b=showDialog({icon:false,text:'REPORTED EGGS: 6\nOBSERVED EGGS: 25?\n80 PACK: UNVERIFIED\n40-EGG TXN: SUSPICIOUS',buttons:[{label:'OK',cls:'default'}]});
+      for(let i=0;i<4;i++){ await sleep(550); if(dom.dialogs.contains(b)) b.querySelector('.dlg-text').textContent='REPORTED EGGS: 6\nOBSERVED EGGS: '+(18+rand(50))+'?\n80 PACK: UNVERIFIED\n40-EGG TXN: SUSPICIOUS'; else break; } },
+    async p75(c){ for(const t of ['BUSINESS EGG','PERSONAL EGG','DEPENDENT EGG','CAPITAL EGG','EGG, MISC.']){ ui.setCounter(t); await sleep(480); }
+      await dialogAsync({icon:false,text:'THIS EGG REQUIRES\nSUPPORTING DOCUMENTATION.',buttons:[{label:'OK',cls:'default'}]}); },
+    async finale(c){ if(c._aud)c._aud.remove();
+      const b=showDialog({icon:false,text:'PENALTY: LATE EGG\nPENALTY: EXTRA EGG\nPENALTY: NO EGG\nPENALTY: EGG',buttons:[]}); await sleep(1700); closeDialog(b);
+      await dialogAsync({icon:'*',text:'AUDIT COMPLETE.\n\nREFUND:\n1 NUDE EGG.',buttons:[{label:'GREAT NEWS',cls:'default'}]});
+      await chaosPayoff(c, { endText:'REFUND ISSUED.\nNUDE EGG.', duringReveal:async()=>{
+        const box=prop('<rect class="ln" x="-52" y="-18" width="104" height="36" fill="#fff"/>', 470, 250); box.setAttribute('transform','translate(470 250) rotate(-12)');
+        const lbl=labelProp(470,257,'DEDUCTIBLE',20,-12); sound.pack(); await sleep(1400); box.remove(); lbl.remove(); } }); } },
+
+  { id:'performance', title:'PERFORMANCE REVIEW', weight:2, minPlayCount:2,
+    async p25(c){ c._hr=prop(EGGLET+'<rect class="ln" x="18" y="-18" width="30" height="42" fill="#fff"/>', 690, 300);
+      await dialogAsync({icon:false,text:'EGGMAN’S EGG CONSUMPTION\nIS BELOW EXPECTATIONS.',buttons:[{label:'OK',cls:'default'}]}); },
+    async p50(c){ await dialogAsync({icon:false,text:'EGG PERFORMANCE\nIMPROVEMENT PLAN:\nMORE EGGS · BETTER EGGS\nLEADERSHIP · SYNERGY',buttons:[{label:'OK',cls:'default'}]}); },
+    async p75(c){ EM.tie(true); ui.setCounter('EGG');
+      await dialogAsync({icon:false,text:'DOCUMENT EVERY EGG.',buttons:[{label:'OK',cls:'default'}]}); },
+    async finale(c){ if(c._hr)c._hr.remove();
+      await dialogAsync({icon:false,text:'AFTER CAREFUL REVIEW…',buttons:[{label:'…',cls:'default'}]}); await sleep(700);
+      ui.setTitle('SENIOR EGG'); await dialogAsync({icon:'*',text:'EGGMAN HAS BEEN\nPROMOTED. SENIOR EGG.',buttons:[{label:'OK',cls:'default'}]});
+      await dialogAsync({icon:false,text:'YOU HAVE BEEN PLACED ON A\nPERFORMANCE IMPROVEMENT PLAN.',buttons:[{label:'OK',cls:'default'}]});
+      EM.tie(false); dom.eggman.classList.add('walking'); await sleep(700); dom.eggman.classList.remove('walking');
+      await chaosPayoff(c, { endText:'SENIOR EGG.\nNUDE EGG.', duringReveal:async()=>{ const l=labelProp(480,240,'LEADERSHIP',22); await sleep(1300); l.remove(); } }); } },
+
+  { id:'timetravel', title:'TIME TRAVEL', weight:2, minPlayCount:3,
+    async p25(c){ const g=futureEggman(1000,EM.y,'EGGMAN 2029'); g.style.transition='transform .9s steps(6)';
+      await sleep(30); g.setAttribute('transform',`translate(${EM.x+190} ${EM.y})`); await sleep(950);
+      await dialogAsync({icon:false,text:'STOP FEEDING HIM.',buttons:[{label:'OK',cls:'default'}]});
+      EM.eating(true); await sleep(250); EM.eating(false);
+      g.setAttribute('transform',`translate(1040 ${EM.y})`); await sleep(950); g.remove(); },
+    async p50(c){ const g=futureEggman(1000,EM.y,'EGGMAN 2047','<path class="ln" d="M-20,-4 q20,18 40,0"/><line class="ln" x1="42" y1="10" x2="54" y2="42"/>'); g.style.transition='transform .9s steps(6)';
+      await sleep(30); g.setAttribute('transform',`translate(${EM.x+190} ${EM.y})`); await sleep(950);
+      await dialogAsync({icon:false,text:'YOU HAVE TO KEEP\nFEEDING HIM.',buttons:[{label:'OK',cls:'default'}]});
+      await dialogAsync({icon:false,text:'NOT THAT ONE.',buttons:[{label:'OK',cls:'default'}]});
+      g.setAttribute('transform',`translate(1040 ${EM.y})`); await sleep(950); g.remove(); },
+    async p75(c){ const g=futureEggman(1000,EM.y,'EGGMAN NEXT TUESDAY'); g.style.transition='transform .9s steps(6)';
+      await sleep(30); g.setAttribute('transform',`translate(${EM.x+190} ${EM.y})`); await sleep(950);
+      await dialogAsync({icon:false,text:'THERE ISN’T MUCH TIME.',buttons:[{label:'…',cls:'default'}]});
+      await dialogAsync({icon:false,text:'I HAVE A DENTIST\nAPPOINTMENT.',buttons:[{label:'OK',cls:'default'}]});
+      g.setAttribute('transform',`translate(1040 ${EM.y})`); await sleep(950); g.remove(); },
+    async finale(c){ const tm=prop('<rect class="ln" x="-50" y="-70" width="100" height="120" fill="#fff"/><circle class="ln" cx="0" cy="-16" r="22" fill="#fff"/>', 640, EM.y-6);
+      const g1=futureEggman(140,EM.y,'2029'), g2=futureEggman(300,EM.y,'2047','<line class="ln" x1="42" y1="10" x2="54" y2="42"/>'), g3=futureEggman(830,EM.y,'NEXT TUES');
+      await dialogAsync({icon:false,text:'YOU DID THIS.',buttons:[{label:'OK',cls:'default'}]});
+      await dialogAsync({icon:false,text:'NO, YOU DID THIS.',buttons:[{label:'OK',cls:'default'}]});
+      await EM.walkTo(585,1200); EM.eating(true); await sleep(400); tm.remove(); EM.eating(false);
+      g1.remove(); g2.remove(); g3.remove();
+      await dialogAsync({icon:'*',text:'TIMELINE FIXED.',buttons:[{label:'OK',cls:'default'}]});
+      await EM.walkTo(480,700);
+      await chaosPayoff(c, { skipWalk:true, endText:'TIMELINE FIXED.\nNUDE EGG.', duringReveal:async()=>{
+        const g=futureEggman(140,EM.y,'2029'); await sleep(650); g.remove(); } }); } },
+
+  { id:'laquinta', title:'LA QUINTA STANDOFF', weight:2, minPlayCount:3,
+    async p25(c){ c._gun=prop('<rect class="ln" x="0" y="-6" width="34" height="12" fill="#fff"/><rect class="ln" x="4" y="6" width="10" height="16" fill="#fff"/>', EM.x+120, EM.y-40);
+      await dialogAsync({icon:false,text:'WELL, WELL, WELL,\nIF IT ISN’T THE CLEANING LADY\nAT THE LA QUINTA INN.',buttons:[{label:'OK',cls:'default'}]}); },
+    async p50(c){ const cart=prop('<rect class="ln" x="-24" y="-30" width="48" height="40" fill="#fff"/><circle class="eye" cx="-14" cy="14" r="7"/><circle class="eye" cx="14" cy="14" r="7"/>', -60, 320);
+      cart.style.transition='transform 1.4s linear'; await sleep(30); cart.setAttribute('transform','translate(1020 320)'); await sleep(1450); cart.remove();
+      await dialogAsync({icon:false,text:'WHERE WERE YOU BETWEEN\nCHECKOUT AND CONTINENTAL\nBREAKFAST?',buttons:[{label:'OK',cls:'default'}]}); },
+    async p75(c){ await dialogAsync({icon:false,text:'*CLICK*  *CLICK*',buttons:[{label:'OK',cls:'default'}]});
+      const flag=prop('<rect class="ln" x="34" y="-18" width="30" height="20" fill="#fff"/>', EM.x+120, EM.y-40); const t=labelProp(EM.x+169,EM.y-40,'EGG',12);
+      await dialogAsync({icon:'!',text:'…',buttons:[{label:'OK',cls:'default'}]}); flag.remove(); t.remove(); },
+    async finale(c){ if(c._gun)c._gun.remove();
+      const cl=prop(EGGLET+'<path class="ln" d="M-26,-52 q26,-18 52,0"/><rect class="ln" x="-20" y="-4" width="40" height="30" fill="#fff"/><line class="ln" x1="30" y1="-42" x2="48" y2="24"/>', 660, EM.y);
+      await dialogAsync({icon:false,text:'…',buttons:[{label:'…',cls:'default'}]}); await sleep(1000);
+      await dialogAsync({icon:false,text:'YOU LEFT YOUR ICE\nMACHINE RUNNING.',buttons:[{label:'OK',cls:'default'}]});
+      const gun2=prop('<rect class="ln" x="0" y="-6" width="34" height="12" fill="#fff"/>', EM.x+120, EM.y-40); sound.pack();
+      const dots=[]; for(let i=0;i<10;i++) dots.push(prop('<circle r="4" fill="#000"/>', EM.x+150+rand(120), EM.y-60+rand(80)));
+      await sleep(700); dots.forEach(d=>d.remove()); gun2.remove();
+      await chaosPayoff(c, { endText:'CHECKOUT COMPLETE.\nNUDE EGG.', duringReveal:async()=>{
+        const cart=prop('<rect class="ln" x="-24" y="-30" width="48" height="40" fill="#fff"/>', -60, 330); cart.style.transition='transform 1.6s linear'; await sleep(30); cart.setAttribute('transform','translate(1020 330)'); await sleep(1500); cart.remove(); if(cl)cl.remove(); } }); } }
 ];
 
 /* ---- selection with no-consecutive-repeat / recent-avoidance ---- */
