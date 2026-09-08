@@ -262,88 +262,114 @@ function refillBasket(target){
 function clearEggs(){ dom.play.innerHTML=''; occupied = new Set(); }
 
 /* ---- VERY FORGIVING mouth target, from the ACTUAL RENDERED mouth ----
-   The mouth's on-screen rect already follows every transform (walk, scale,
-   grow, bend) and the responsive stage scale, so it can never drift from the
-   artwork. We pad it 30% on every side and favour eating heavily: a drop that
-   a human would call "on/in the mouth" counts. */
-function mouthEatRect(){
+   getMouthEatRect() is the SINGLE source of truth used by both gameplay AND the
+   debug overlay: the rendered mouth box padded 30% on every side. It follows
+   every transform (walk/scale/grow/bend) and the responsive stage scale. */
+function getMouthEatRect(){
   const m = dom.egMouth.getBoundingClientRect();          // viewport px, source of truth
   const padX = m.width * 0.30, padY = m.height * 0.30;
   return { left:m.left-padX, right:m.right+padX, top:m.top-padY, bottom:m.bottom+padY,
            width:m.width+2*padX, height:m.height+2*padY, mouthRect:m };
 }
-/* debug snapshot of the last release (dev only) */
-let _mouthDebug = { mouthRect:null, eatRect:null, lastRelease:null, lastEggRect:null, lastResult:null };
-/* Eaten if ANY of: release point in eatRect, egg center in eatRect, or the egg
-   box overlaps eatRect AT ALL (any overlap, no minimum). */
-function eggEaten(el, relX, relY){
-  const R = mouthEatRect();
-  const e = el.getBoundingClientRect();
-  const ecx = e.left+e.width/2, ecy = e.top+e.height/2;
-  const ptIn  = (relX!=null && relY!=null) && relX>=R.left && relX<=R.right && relY>=R.top && relY<=R.bottom;
-  const ctrIn = ecx>=R.left && ecx<=R.right && ecy>=R.top && ecy<=R.bottom;
-  const overlap = !(e.right < R.left || e.left > R.right || e.bottom < R.top || e.top > R.bottom);
-  const eaten = ptIn || ctrIn || overlap;
-  _mouthDebug = { mouthRect:R.mouthRect, eatRect:R,
-                  lastRelease:(relX!=null?{x:relX,y:relY}:null), lastEggRect:e,
-                  lastResult: eaten?'EATEN':'HOME' };
-  return eaten;
+function pointInEatRect(x, y){
+  const R = getMouthEatRect();
+  return x>=R.left && x<=R.right && y>=R.top && y<=R.bottom;
 }
-function mouthCenterLogical(){                            // for the eat animation target
+function pointNearEatRect(x, y, pad){
+  const R = getMouthEatRect();
+  return x>=R.left-pad && x<=R.right+pad && y>=R.top-pad && y<=R.bottom+pad;
+}
+const MOUTH_GRACE_MS = 400;   // released within this long of last being inside -> EATEN
+const MAGNET_STICKY  = 120;   // once armed, egg stays glued while pointer is within this of eatRect
+
+/* live debug snapshot — EGG.getMouthDebug() reads this */
+let _mouthDebug = { mouthRect:null, eatRect:null, pointer:null, pointerInsideEatRect:false,
+                    mouthArmed:false, lastInsideMouthAt:0, lastRelease:null, lastEggRect:null, lastResult:null };
+
+/* extra OR test on release: release point / egg center / any box overlap */
+function eggOverlapsMouth(el, relX, relY){
+  const R = getMouthEatRect();
+  const e = el.getBoundingClientRect();
+  const ecx=e.left+e.width/2, ecy=e.top+e.height/2;
+  const ptIn  = (relX!=null) && relX>=R.left && relX<=R.right && relY>=R.top && relY<=R.bottom;
+  const ctrIn = ecx>=R.left && ecx<=R.right && ecy>=R.top && ecy<=R.bottom;
+  const overlap = !(e.right<R.left || e.left>R.right || e.bottom<R.top || e.top>R.bottom);
+  _mouthDebug.eatRect=R; _mouthDebug.mouthRect=R.mouthRect; _mouthDebug.lastEggRect=e;
+  return ptIn || ctrIn || overlap;
+}
+function mouthCenterLogical(){                            // eat-animation target
   const m = dom.egMouth.getBoundingClientRect(), st = stageMetrics();
   return { x:(m.left+m.width/2 - st.left)/st.scale, y:(m.top+m.height/2 - st.top)/st.scale };
 }
+function armMouth(on){ dom.eggman.classList.toggle('armed', !!on); }
 
-/* ---- robust drag: EVERY completed gesture ends EATEN or HOME ---- */
-function attachEggDrag(el){
-  let s = null;   // active drag session
-
-  el.addEventListener('pointerdown', (e) => {
-    if(feedingLocked || el._eaten) return;
-    e.preventDefault();
-    const c = eggCenter(el);
-    const p = toLogical(e.clientX, e.clientY);
-    s = { id:e.pointerId, done:false, moved:0,
-          offX:p.x-c.x, offY:p.y-c.y, downT:Date.now(),
-          lastX:c.x, lastY:c.y };
-    el.classList.add('grab'); el.classList.remove('snap','fly');
-    try{ el.setPointerCapture(e.pointerId); }catch(_){}
-    sound.pickup();
-  });
-
-  el.addEventListener('pointermove', (e) => {
-    if(!s || s.done) return;
-    e.preventDefault();
-    const p = toLogical(e.clientX, e.clientY);
-    const cx = p.x - s.offX, cy = p.y - s.offY;
-    s.moved += Math.abs(cx - s.lastX) + Math.abs(cy - s.lastY);
-    s.lastX = cx; s.lastY = cy;
-    positionEgg(el, cx, cy);
-  });
-
-  function finalize(eaten){
-    if(!s || s.done) return;
-    s.done = true;
-    el.classList.remove('grab');
-    try{ el.releasePointerCapture(s.id); }catch(_){}
-    if(eaten) flyAndEat(el);
-    else snapHome(el);
-    s = null;
+/* ---- robust drag: ONE module-level session, finalized at window level ----
+   Mouth entry is detected CONTINUOUSLY during pointermove (not only at
+   pointerup); once armed the egg magnetizes to the mouth. Every gesture ends
+   EATEN or HOME exactly once. */
+let DRAG = null;
+function onEggPointerDown(el, e){
+  if(feedingLocked || el._eaten || DRAG) return;
+  e.preventDefault();
+  const c = eggCenter(el);
+  const p = toLogical(e.clientX, e.clientY);
+  DRAG = { el, id:e.pointerId, offX:p.x-c.x, offY:p.y-c.y, moved:0, downT:Date.now(),
+           lastClientX:e.clientX, lastClientY:e.clientY,
+           mouthArmed:false, glued:false, lastInsideAt:0, done:false };
+  el.classList.add('grab'); el.classList.remove('snap','fly');
+  try{ el.setPointerCapture(e.pointerId); }catch(_){}
+  sound.pickup();
+  updateDrag(e.clientX, e.clientY);
+}
+function updateDrag(clientX, clientY){
+  if(!DRAG) return;
+  DRAG.lastClientX=clientX; DRAG.lastClientY=clientY;
+  const inside = pointInEatRect(clientX, clientY);      // continuous arming
+  if(inside){ DRAG.lastInsideAt = performance.now();
+    if(!DRAG.mouthArmed){ DRAG.mouthArmed=true; armMouth(true); } }
+  if(DRAG.mouthArmed && pointNearEatRect(clientX, clientY, MAGNET_STICKY)){
+    DRAG.glued = true; DRAG.el.classList.add('magnet');   // magnet snap to mouth centre
+    const m = mouthCenterLogical(); positionEgg(DRAG.el, m.x, m.y);
+  } else {
+    if(DRAG.glued){ DRAG.glued=false; DRAG.el.classList.remove('magnet'); }
+    const p = toLogical(clientX, clientY); positionEgg(DRAG.el, p.x-DRAG.offX, p.y-DRAG.offY);
   }
+  _mouthDebug.pointer={x:clientX,y:clientY}; _mouthDebug.pointerInsideEatRect=inside;
+  _mouthDebug.mouthArmed=DRAG.mouthArmed; _mouthDebug.lastInsideMouthAt=DRAG.lastInsideAt;
+  const R=getMouthEatRect(); _mouthDebug.eatRect=R; _mouthDebug.mouthRect=R.mouthRect;
+}
+function finishDrag(relX, relY){
+  if(!DRAG || DRAG.done) return;
+  DRAG.done = true;
+  const el = DRAG.el;
+  el.classList.remove('grab','magnet');
+  try{ el.releasePointerCapture(DRAG.id); }catch(_){}
+  const tap   = DRAG.moved < 12 && (Date.now()-DRAG.downT) < 260;
+  const grace = DRAG.mouthArmed && (performance.now()-DRAG.lastInsideAt) <= MOUTH_GRACE_MS;
+  const geo   = eggOverlapsMouth(el, relX, relY);
+  const eaten = tap || DRAG.glued || grace || geo;
+  _mouthDebug.lastRelease = (relX!=null)?{x:relX,y:relY}:_mouthDebug.pointer;
+  _mouthDebug.lastResult  = eaten ? 'EATEN' : 'HOME';
+  armMouth(false);
+  DRAG = null;
+  if(eaten) flyAndEat(el); else snapHome(el);
+}
+/* window-level, capture-phase listeners: finalize is guaranteed no matter which
+   element the pointerup lands on (root cause of the fast-drop misses). */
+function _winMove(e){ if(!DRAG || DRAG.done || (e.pointerId!=null && e.pointerId!==DRAG.id)) return;
+  e.preventDefault(); DRAG.moved += Math.abs(e.clientX-DRAG.lastClientX)+Math.abs(e.clientY-DRAG.lastClientY);
+  updateDrag(e.clientX, e.clientY); }
+function _winUp(e){ if(!DRAG || DRAG.done || (e.pointerId!=null && e.pointerId!==DRAG.id)) return;
+  finishDrag(e.clientX, e.clientY); }
+function _winCancel(e){ if(!DRAG || DRAG.done || (e.pointerId!=null && e.pointerId!==DRAG.id)) return;
+  finishDrag(DRAG.lastClientX, DRAG.lastClientY); }
+window.addEventListener('pointermove', _winMove, {capture:true, passive:false});
+window.addEventListener('pointerup', _winUp, {capture:true});
+window.addEventListener('pointercancel', _winCancel, {capture:true});
+window.addEventListener('lostpointercapture', _winCancel, {capture:true});
 
-  el.addEventListener('pointerup', (e) => {
-    if(!s || s.done) return;
-    // capture release point + evaluate collision WHILE the egg is still at the
-    // drop location, before any snapback / cleanup.
-    const relX = e.clientX, relY = e.clientY;
-    const tap = s.moved < 12 && (Date.now()-s.downT) < 260;
-    const hit = eggEaten(el, relX, relY);          // records _mouthDebug
-    const eaten = tap || hit;
-    _mouthDebug.lastResult = eaten ? 'EATEN' : 'HOME';
-    finalize(eaten);
-  });
-  el.addEventListener('pointercancel', () => finalize(false));
-  el.addEventListener('lostpointercapture', () => finalize(false));
+function attachEggDrag(el){
+  el.addEventListener('pointerdown', (e) => onEggPointerDown(el, e));
 }
 
 function snapHome(el){
@@ -555,15 +581,15 @@ const CHAOS_EVENTS = [
   { id:'thirdArm', min:2, weight:2, async run(){ EM.arm3(true); await sleep(3000); EM.arm3(false); } },
   { id:'pantsOnHead', min:3, weight:2, async run(){ setShown(dom.egPants,true); dom.egPants.style.transform='translateY(-250px)'; await sleep(2600); dom.egPants.style.transform='translateY(0)'; EM.hidePants(); } },
   { id:'sitDown', min:2, weight:2, async run(){ EM.place(EM.x, EM.HOMEY+70); await sleep(2400); EM.place(EM.x, EM.HOMEY); } },
-  { id:'secondMini', min:2, weight:2, async run(){ await miniWander(); } },
+  { id:'secondMini', min:2, weight:2, allowOverlap:true, async run(){ await miniWander(); } },
   { id:'necktie', min:2, weight:2, async run(){ EM.tie(true); await sleep(2600); EM.tie(false); } },
   { id:'leftInsist', min:3, weight:2, async run(){ await EM.walkTo(-260,1200); showDialog({text:'EGGMAN IS STILL HERE.',buttons:[{label:'OK',cls:'default'}]}); await sleep(900); await EM.walkTo(EM.HOMEX,1200); } },
   // ---- EGG BEHAVIOR ----
-  { id:'runaway', min:1, weight:3, async run(){ const e=makeEgg(EM.x+140, EM.HOMEY+60, {legs:true, gag:true});
+  { id:'runaway', min:1, weight:3, allowOverlap:true, async run(){ const e=makeEgg(EM.x+140, EM.HOMEY+60, {legs:true, gag:true});
       e.classList.add('snap'); await sleep(30); positionEgg(e, LW+80, EM.HOMEY+60); await sleep(1200); e.remove(); } },
   { id:'giantEgg', min:1, weight:3, async run(){ const e=addBasketEgg({big:true}); if(e) flash('THIS EGG IS BIG.'); } },
-  { id:'microEgg', min:1, weight:3, async run(){ addBasketEgg({tiny:true}); } },
-  { id:'squareEgg', min:1, weight:3, async run(){ addBasketEgg({square:true}); /* nobody acknowledges it */ } },
+  { id:'microEgg', min:1, weight:3, allowOverlap:true, async run(){ addBasketEgg({tiny:true}); } },
+  { id:'squareEgg', min:1, weight:3, allowOverlap:true, async run(){ addBasketEgg({square:true}); /* nobody acknowledges it */ } },
   { id:'comeBackOut', min:2, weight:2, async run(){ await sleep(1800); addBasketEgg({}); flash('AN EGG CAME BACK OUT.'); } },
   // ---- SYSTEM / OFFICE NONSENSE ----
   { id:'promoted', min:1, weight:3, async run(){ await dialogAsync({text:'EGGMAN HAS BEEN PROMOTED.',buttons:[{label:'OK',cls:'default'}]}); } },
@@ -579,10 +605,42 @@ const CHAOS_EVENTS = [
   { id:'notHR', min:3, weight:2, async run(){ await dialogAsync({text:'PLEASE DO NOT MENTION\nTHIS TO HR.',buttons:[{label:'OK',cls:'default'}]}); } },
   { id:'update', min:2, weight:2, async run(){ await dialogAsync({text:'EGG UPDATE AVAILABLE.',buttons:[{label:'UPDATE',cls:'default'}]}); await dialogAsync({text:'EGG IS UP TO DATE.',buttons:[{label:'OK',cls:'default'}]}); } },
   { id:'loadingEgg', min:1, weight:3, async run(){ const b=showDialog({icon:false,text:'LOADING',bar:true,barDur:1500,buttons:[]}); await sleep(1800); b.querySelector('.dlg-text').textContent='EGG'; await sleep(900); closeDialog(b); } },
-  { id:'inMeeting', min:2, weight:2, async run(){ await dialogAsync({text:'EGGMAN IS CURRENTLY\nIN A MEETING.',buttons:[{label:'OK',cls:'default'}]}); } }
+  { id:'inMeeting', min:2, weight:2, async run(){ await dialogAsync({text:'EGGMAN IS CURRENTLY\nIN A MEETING.',buttons:[{label:'OK',cls:'default'}]}); } },
+  // ---- AUTHORED PILEUPS: overlap IS the joke; they manage & clean up their own children ----
+  { id:'dialogPileup', min:3, weight:2, async run(){
+      const boxes=[];
+      boxes.push(showDialog({icon:false,text:'EGG.',at:{x:430,y:230},buttons:[{label:'OK'}]})); await sleep(500);
+      boxes.push(showDialog({icon:false,text:'EGG?',at:{x:480,y:275},buttons:[{label:'OK'}]})); await sleep(500);
+      boxes.push(showDialog({icon:'!',text:'EGG.',at:{x:530,y:320},buttons:[{label:'OK'}]})); await sleep(1700);
+      boxes.forEach(closeDialog); } },
+  { id:'systemMeltdown', min:3, weight:2, async run(){
+      const boxes=[];
+      for(let i=0;i<5;i++){ boxes.push(showDialog({icon:false,text:'EGG',at:{x:360+i*44,y:210+i*34},buttons:[{label:'OK'}]})); await sleep(320); }
+      await sleep(1400); boxes.forEach(closeDialog); } }
 ];
 
 function flash(text){ showDialog({ icon:false, text, buttons:[{label:'OK',cls:'default'}] }); }
+
+/* ---- CHAOS EVENT SCHEDULER (mutex + queue) ----
+   Normal (major) events run ONE AT A TIME so they never accidentally stack.
+   allowOverlap:true marks safe minor-background events (they add eggs / a
+   wandering mini-Eggman) that may run concurrently. Authored pileup events are
+   still major (one at a time) but deliberately stack their own child dialogs. */
+let _eventActive=false; const _eventQueue=[];
+function chaosBusy(){ return _eventActive || _eventQueue.length>0 || dialogStack.length>0; }
+function runChaosEvent(ev){
+  if(ev.allowOverlap){ Promise.resolve().then(()=>ev.run()).catch(()=>{}); return; }
+  _eventQueue.push(ev); drainChaosEvents();
+}
+async function drainChaosEvents(){
+  if(_eventActive) return;
+  const ev=_eventQueue.shift(); if(!ev) return;
+  _eventActive=true;
+  try{ await ev.run(); }catch(e){}      // event resolves only after its own cleanup
+  _eventActive=false;
+  if(_eventQueue.length) drainChaosEvents();
+}
+function clearChaosEvents(){ _eventQueue.length=0; }
 
 async function miniWander(){
   setShown(dom.mini, true);
@@ -597,6 +655,7 @@ async function miniWander(){
 
 function startChaos(){
   resetPresentation();
+  _eventActive=false; clearChaosEvents();   // fresh scheduler each run
   const pc = saveState.playCount;   // completed runs so far
   const c = { disp:0, feeds:0, forceAt:7+rand(8), startT:Date.now(),
               lastMsgFeed:-5, done:false, firstEggIs41:false, refuseFirst:false, schedule:new Map() };
@@ -636,22 +695,26 @@ function startChaos(){
     if(c.disp<0 && chance(0.5)) c.disp=0;
     render(chance(0.06));
 
-    if(c.feeds - c.lastMsgFeed >= 2 && chance(0.28)){ c.lastMsgFeed=c.feeds;
-      showDialog({icon:false,text:pick(SYS_MESSAGES),buttons:[{label:'OK',cls:'default'}]}); }
-
-    // scheduled curated event?
+    // scheduled event OR a system message this feed — never both, and majors
+    // only when nothing else is on screen (prevents accidental pileups)
     const ev = c.schedule.get(c.feeds);
-    if(ev){ c.schedule.delete(c.feeds); Promise.resolve().then(()=>ev.run(c)).catch(()=>{}); }
+    if(ev){ c.schedule.delete(c.feeds);
+      if(ev.allowOverlap || !chaosBusy()) runChaosEvent(ev);        // minor anytime; major only when idle
+    } else if(!chaosBusy() && c.feeds - c.lastMsgFeed >= 2 && chance(0.28)){
+      c.lastMsgFeed=c.feeds; showDialog({icon:false,text:pick(SYS_MESSAGES),buttons:[{label:'OK',cls:'default'}]});
+    }
 
-    // random out-of-eggs -> weird pack
-    if(c.feeds>=2 && chance(0.12)) return outOfEggsChaos(c);
+    // random out-of-eggs -> weird pack (not while something else is active)
+    if(!chaosBusy() && c.feeds>=2 && chance(0.12)) return outOfEggsChaos(c);
 
-    // win conditions
+    // win conditions — hard wins always fire (completability); soft wins wait for a quiet moment
     if(c.disp>=41) return chaosWin(c);
-    if(c.disp===6 && chance(0.20)) return chaosWin(c);
-    if(v===-1 && chance(0.15)) return chaosWin(c);
-    if(chance(0.04)) return chaosWin(c);
     if(c.feeds>=c.forceAt || (Date.now()-c.startT)>110000) return chaosWin(c);
+    if(!chaosBusy()){
+      if(c.disp===6 && chance(0.20)) return chaosWin(c);
+      if(v===-1 && chance(0.15)) return chaosWin(c);
+      if(chance(0.04)) return chaosWin(c);
+    }
 
     refillBasket(5);
   }};
@@ -676,8 +739,12 @@ function outOfEggsChaos(c){
 
 function chaosWin(c){
   if(c.done) return; c.done=true; feedingLocked=true;
+  clearChaosEvents();                       // no queued events fire over the payoff
   ui.setCounter('41 EGGS'); ui.setTitle('EGG'); sound.win();
-  setTimeout(()=>showDialog({icon:false,text:'YOU WIN',buttons:[{label:'OK',cls:'default',onClick(){ chaosEnding(c); }}]}), 500);
+  // wait for any in-flight event/dialog to clear so YOU WIN never stacks (cap ~6s)
+  const showWin=()=>showDialog({icon:false,text:'YOU WIN',buttons:[{label:'OK',cls:'default',onClick(){ chaosEnding(c); }}]});
+  (function waitIdle(tries){ if((!_eventActive && dialogStack.length===0) || tries>40){ setTimeout(showWin,300); }
+    else setTimeout(()=>waitIdle(tries+1),150); })(0);
 }
 
 /* Chaos ending: the pants/butt sequence, mutated by a few curated twists. */
@@ -758,31 +825,38 @@ boot();
 /* ---- development-only mouth debug overlay (hidden during normal play) ----
    green rectangle = the actual forgiving eatRect used by gameplay
    red dot        = last pointer-release position */
-let _dbgRect=null, _dbgDot=null, _dbgRAF=null;
+let _dbgRect=null, _dbgDot=null, _dbgLabel=null, _dbgRAF=null;
 function debugMouth(on){
   if(on){
     if(!_dbgRect){
       _dbgRect=document.createElement('div');
-      _dbgRect.style.cssText='position:fixed;z-index:9999;border:2px solid #0a0;'+
-        'background:rgba(0,200,0,.22);pointer-events:none;box-sizing:border-box;';
+      _dbgRect.style.cssText='position:fixed;z-index:9999;pointer-events:none;box-sizing:border-box;';
       document.body.appendChild(_dbgRect);
+      _dbgLabel=document.createElement('div');
+      _dbgLabel.textContent='ARMED';
+      _dbgLabel.style.cssText='position:fixed;z-index:10001;font:700 12px monospace;color:#0a0;pointer-events:none;';
+      document.body.appendChild(_dbgLabel);
       _dbgDot=document.createElement('div');
       _dbgDot.style.cssText='position:fixed;z-index:10000;width:10px;height:10px;margin:-5px 0 0 -5px;'+
         'border-radius:50%;background:red;pointer-events:none;';
       document.body.appendChild(_dbgDot);
     }
     _dbgRect.hidden=false; _dbgDot.hidden=false;
-    (function loop(){ const R=mouthEatRect();
+    (function loop(){ const R=getMouthEatRect();      // SAME helper as gameplay
+      const armed=_mouthDebug.mouthArmed;
       _dbgRect.style.left=R.left+'px'; _dbgRect.style.top=R.top+'px';
       _dbgRect.style.width=R.width+'px'; _dbgRect.style.height=R.height+'px';
-      const r=_mouthDebug.lastRelease;
-      if(r){ _dbgDot.hidden=false; _dbgDot.style.left=r.x+'px'; _dbgDot.style.top=r.y+'px'; }
-      else _dbgDot.hidden=true;
+      _dbgRect.style.border = armed ? '4px dashed #0a0' : '2px solid #0a0';
+      _dbgRect.style.background = armed ? 'rgba(0,200,0,.40)' : 'rgba(0,200,0,.22)';
+      _dbgLabel.hidden = !armed; _dbgLabel.style.left=(R.left+4)+'px'; _dbgLabel.style.top=(R.top-16)+'px';
+      const r=_mouthDebug.pointer || _mouthDebug.lastRelease;
+      if(r){ _dbgDot.hidden=false; _dbgDot.style.left=r.x+'px'; _dbgDot.style.top=r.y+'px'; } else _dbgDot.hidden=true;
       _dbgRAF=requestAnimationFrame(loop); })();
   } else {
     if(_dbgRAF) cancelAnimationFrame(_dbgRAF); _dbgRAF=null;
     if(_dbgRect) _dbgRect.hidden=true;
     if(_dbgDot) _dbgDot.hidden=true;
+    if(_dbgLabel) _dbgLabel.hidden=true;
   }
   return on;
 }
@@ -803,7 +877,7 @@ window.EGG = {
   press(label){ const b=[...document.querySelectorAll('.dialog button')]; const t=label?b.find(x=>x.textContent===label):b[b.length-1]; if(t) t.click(); return !!t; },
   locked(){ return feedingLocked; },
   eggs(){ return [...dom.play.querySelectorAll('.egg')]; },
-  mouth(){ return mouthEatRect(); },
+  mouth(){ return getMouthEatRect(); },
   getMouthDebug(){ return _mouthDebug; }
 };
 
