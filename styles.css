@@ -1,390 +1,186 @@
 /* ===========================================================
-   EGG  —  crude vintage-Macintosh-era look
-   pale gray-blue desktop, 1px black line art, no color, no gradients
+   EGG — crude vintage-Macintosh look, LANDSCAPE 960x540 stage
+   The whole stage is built at one logical size and scaled.
    =========================================================== */
-
 :root{
-  --paper: #ffffff;
-  --ink: #000000;
-  --desk: #8f9aa3;          /* pale blue-gray desktop */
-  --desk-dither: rgba(255,255,255,0.10);
-  --gray: #c9c9c9;
-  --font: "Geneva", "Chicago", "Charcoal", "MS Sans Serif", Verdana, system-ui, sans-serif;
-  --mono: "Monaco", "Courier New", monospace;
+  --paper:#fff; --ink:#000; --desk:#8f9aa3; --desk-dither:rgba(255,255,255,.10);
+  --pants:#d9d9d9; --gray:#c9c9c9;
+  --font:"Geneva","Chicago","Charcoal","MS Sans Serif",Verdana,system-ui,sans-serif;
+  --mono:"Monaco","Courier New",monospace;
+  --s:1;            /* stage scale, set by JS */
+  --walk:0s;        /* walk transition duration, set by JS */
+}
+*{ box-sizing:border-box; }
+html,body{
+  margin:0; padding:0; height:100%;
+  background:var(--desk); color:var(--ink);
+  font-family:var(--font);
+  -webkit-font-smoothing:none; -moz-osx-font-smoothing:grayscale; font-smooth:never;
+  -webkit-tap-highlight-color:transparent; text-rendering:optimizeSpeed;
+  overscroll-behavior:none; overflow:hidden;
+  user-select:none; -webkit-user-select:none; touch-action:none;
 }
 
-*{ box-sizing: border-box; }
-
-html, body{
-  margin:0; padding:0;
-  height:100%;
-  background: var(--desk);
-  color: var(--ink);
-  font-family: var(--font);
-  -webkit-font-smoothing: none;
-  -moz-osx-font-smoothing: grayscale;
-  font-smooth: never;
-  -webkit-tap-highlight-color: transparent;
-  text-rendering: optimizeSpeed;
-  overscroll-behavior: none;
-}
-
-body{
-  /* 50%-ish desktop dither so it reads "old computer" */
-  background-color: var(--desk);
-  background-image:
-    linear-gradient(45deg, var(--desk-dither) 25%, transparent 25%, transparent 75%, var(--desk-dither) 75%),
-    linear-gradient(45deg, var(--desk-dither) 25%, transparent 25%, transparent 75%, var(--desk-dither) 75%);
-  background-size: 4px 4px;
-  background-position: 0 0, 2px 2px;
-  overflow: hidden;
-  touch-action: manipulation;
-  user-select: none;
-  -webkit-user-select: none;
-}
-
-/* desk fills the viewport incl. safe areas */
 #desk{
-  position: fixed;
-  inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding:
-    calc(env(safe-area-inset-top) + 6px)
-    calc(env(safe-area-inset-right) + 6px)
-    calc(env(safe-area-inset-bottom) + 6px)
-    calc(env(safe-area-inset-left) + 6px);
+  position:fixed; inset:0;
+  width:100dvw; height:100dvh;
+  background-color:var(--desk);
+  background-image:
+    linear-gradient(45deg,var(--desk-dither) 25%,transparent 25%,transparent 75%,var(--desk-dither) 75%),
+    linear-gradient(45deg,var(--desk-dither) 25%,transparent 25%,transparent 75%,var(--desk-dither) 75%);
+  background-size:4px 4px; background-position:0 0,2px 2px;
+  padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+  overflow:hidden;
 }
 
-/* ---------- the application window ---------- */
-.window{
-  width: 100%;
-  max-width: 430px;
-  height: 100%;
-  max-height: 760px;
-  background: var(--paper);
-  border: 1px solid var(--ink);
-  box-shadow: 2px 2px 0 0 var(--ink);
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
+/* ---------- the scaled stage ---------- */
+#stage{
+  position:absolute; left:50%; top:50%;
+  width:960px; height:540px;
+  transform:translate(-50%,-50%) scale(var(--s));
+  transform-origin:center center;
+  background:var(--paper);
+  border:1px solid var(--ink);
+  box-shadow:2px 2px 0 0 var(--ink);
+  overflow:hidden;
 }
 
-.titlebar{
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  height: 20px;
-  padding: 0 5px;
-  border-bottom: 1px solid var(--ink);
-  background: var(--paper);
-}
-.titlebar-lines{
-  flex: 1 1 auto;
-  height: 11px;
-  background-image: repeating-linear-gradient(
-    to bottom, var(--ink) 0 1px, transparent 1px 3px);
-}
-.closebox{
-  width: 11px; height: 11px;
-  border: 1px solid var(--ink);
-  flex: 0 0 auto;
-}
-.title{
-  flex: 0 0 auto;
-  padding: 0 6px;
-  font-size: 12px;
-  font-weight: 700;
-  background: var(--paper);
-}
+/* window chrome */
+.win-chrome{ position:absolute; left:0; right:0; top:0; }
+.titlebar{ display:flex; align-items:center; gap:6px; height:26px; padding:0 8px; border-bottom:1px solid var(--ink); }
+.titlebar-lines{ flex:1 1 auto; height:14px; background-image:repeating-linear-gradient(to bottom,var(--ink) 0 1px,transparent 1px 4px); }
+.closebox{ width:14px; height:14px; border:1px solid var(--ink); flex:0 0 auto; }
+.title{ flex:0 0 auto; padding:0 10px; font-size:15px; font-weight:700; background:var(--paper); }
+.menubar{ display:flex; gap:22px; height:22px; align-items:center; padding:0 12px; font-size:14px; border-bottom:1px solid var(--ink); }
+.menubar span{ padding:0 2px; }
+.menubar .egg-menu{ font-weight:700; }
 
-.menubar{
-  display:flex; gap:16px;
-  height:18px; align-items:center;
-  padding:0 8px;
-  font-size:11px;
-  border-bottom:1px solid var(--ink);
-}
+/* heads-up */
+.hud{ position:absolute; left:0; right:0; top:52px; text-align:center; pointer-events:none; }
+.feed-title{ font-size:52px; font-weight:700; letter-spacing:2px; line-height:1; text-transform:uppercase; }
+.counter-wrap{ display:inline-block; margin-top:12px; border:1px solid var(--ink); padding:5px 16px; background:var(--paper); }
+.counter{ font-family:var(--mono); font-size:26px; font-weight:700; letter-spacing:2px; }
 
-/* ---------- stage ---------- */
-.stage{
-  position: relative;
-  flex: 1 1 auto;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  padding: 8px 6px 4px;
-  min-height: 0;
-  overflow: hidden;
-}
+/* line art */
+#eggSvg{ position:absolute; inset:0; width:100%; height:100%; overflow:visible; }
+.ln{ fill:none; stroke:var(--ink); stroke-width:5; stroke-linecap:round; }
+.ln2{ fill:none; stroke:var(--ink); stroke-width:4; stroke-linecap:round; }
+.eggbody{ fill:var(--paper); stroke:var(--ink); stroke-width:6; }
+.eye{ fill:var(--paper); stroke:var(--ink); stroke-width:5; }
+.pupil{ fill:var(--ink); }
+.mouth{ fill:#000; stroke:var(--ink); stroke-width:4; transition:rx .12s steps(2), ry .12s steps(2); }
+.foot{ fill:var(--ink); }
+.pants{ fill:var(--pants); stroke:var(--ink); stroke-width:5; }
+.bush{ fill:none; stroke:var(--ink); stroke-width:4; stroke-linecap:round; }
+.hole{ fill:#000; }
+.hat{ fill:var(--paper); stroke:var(--ink); stroke-width:5; }
+.pompom{ fill:#000; }
+.tie{ fill:var(--ink); }
+.basket-label{ font-family:var(--font); font-size:22px; font-weight:700; letter-spacing:3px; text-anchor:middle; fill:var(--ink); }
 
-.feed-title{
-  font-size: clamp(22px, 8vw, 34px);
-  font-weight: 700;
-  letter-spacing: 1px;
-  line-height: 1;
-  margin: 2px 0 6px;
-  text-transform: uppercase;
-}
+/* eggman transform layers */
+#eggman{ transition:transform var(--walk) steps(16); }
+#eggman, #eg-bob, #eg-turn, #eg-torso, #eg-pants, #eg-legs, #eg-leg-l, #eg-leg-r, #mini-eggman{ transform-box:fill-box; }
+#eg-turn{ transition:transform .18s steps(4); transform-origin:50% 50%; }
+#eg-torso{ transition:transform .6s steps(8); transform-origin:50% 92%; }
+#eg-pants{ transition:transform .55s steps(6); }
 
-.counter-wrap{
-  border: 1px solid var(--ink);
-  padding: 3px 10px;
-  margin-bottom: 4px;
-  min-width: 120px;
-  text-align: center;
-  background: var(--paper);
-}
-.counter{
-  font-family: var(--mono);
-  font-size: clamp(15px, 5.2vw, 20px);
-  font-weight: 700;
-  letter-spacing: 1px;
-}
+.eating #eg-mouth{ rx:64px; ry:64px; }
 
-/* ---------- eggman ---------- */
-.eggman-area{
-  flex: 1 1 auto;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 0;
-  width: 100%;
-  position: relative;
-}
-.eggman{
-  height: 100%;
-  max-height: 320px;
-  width: auto;
-  max-width: 100%;
-  overflow: visible;
-  transition: transform 240ms steps(4);
-}
-.eggman.turn{ transform: scaleX(-1); }
-.eggman.shift{ transform: translateX(4px); }
-.eggman.backward .eggbody{ } /* placeholder hook */
+/* crude walk cycle */
+@keyframes bob{ 0%{transform:translateY(0)} 50%{transform:translateY(-9px)} 100%{transform:translateY(0)} }
+@keyframes stepL{ 0%,49%{transform:translateY(0)} 50%,100%{transform:translateY(-16px)} }
+@keyframes stepR{ 0%,49%{transform:translateY(-16px)} 50%,100%{transform:translateY(0)} }
+.walking #eg-bob{ animation:bob .3s steps(2) infinite; }
+.walking #eg-leg-l{ animation:stepL .3s steps(1) infinite; }
+.walking #eg-leg-r{ animation:stepR .3s steps(1) infinite; }
 
-.eggbody{ fill: var(--paper); stroke: var(--ink); stroke-width: 3; }
-.ln{ fill: none; stroke: var(--ink); stroke-width: 3; stroke-linecap: square; }
-.eye{ fill: var(--ink); }
-#eg-eyeL.big, #eg-eyeR.big{ r: 9; }
-.mouth{ fill: #111; stroke: var(--ink); stroke-width: 2; transition: rx 120ms steps(2), ry 120ms steps(2); }
-.eggman.eating .mouth{ rx: 30; ry: 34; }
-.mouth.huge{ rx: 46 !important; ry: 44 !important; }
-.pants{ fill: #d8d8d8; stroke: var(--ink); stroke-width: 3; }
-#eg-pants{ transition: transform 500ms steps(6); }
-#eg-pants.drop{ transform: translateY(70px); opacity: 0; }
-.hat{ fill: #fff; stroke: var(--ink); stroke-width: 3; }
-.hat-pom{ fill:#000; }
+#mini-eggman{ transition:transform var(--mini,0s) linear; }
 
-/* ---------- basket ---------- */
-.basket-area{
-  flex: 0 0 auto;
-  width: 100%;
-  display: flex;
-  justify-content: center;
-  padding: 4px 0 2px;
-  transition: transform 200ms steps(3);
-}
-.basket-area.left{ justify-content: flex-start; padding-left: 12px; }
-.basket-area.right{ justify-content: flex-end; padding-right: 12px; }
-
-.basket{
-  position: relative;
-  width: 200px;
-  max-width: 70vw;
-  height: 74px;
-  border: 1px solid var(--ink);
-  border-top: none;
-  background: var(--paper);
-}
-.basket-lip{
-  position:absolute; top:-1px; left:-6px; right:-6px;
-  height: 10px;
-  border: 1px solid var(--ink);
-  background: var(--paper);
-}
-.eggs{
-  position:absolute; inset:2px 4px 21px;
-  display:flex; flex-wrap:nowrap; align-items:flex-end;
-  justify-content:center; gap:1px;
-  overflow: hidden;
-}
-.basket-front{
-  position:absolute; left:0; right:0; bottom:0;
-  height: 20px;
-  border-top:1px solid var(--ink);
-  display:flex; align-items:center; justify-content:center;
-  font-size:11px; font-weight:700; letter-spacing:2px;
-  background:
-    repeating-linear-gradient(to right, var(--ink) 0 1px, transparent 1px 6px) top/100% 4px no-repeat,
-    var(--paper);
-}
-
-/* an egg */
+/* ---------- eggs ---------- */
+#play{ position:absolute; inset:0; }
 .egg{
-  width: 26px; height: 34px;
-  flex: 0 0 auto;
-  touch-action: none;
-  cursor: grab;
-  will-change: transform;
+  position:absolute; width:52px; height:66px;
+  touch-action:none; cursor:grab; will-change:left,top,transform;
 }
 .egg svg{ display:block; width:100%; height:100%; overflow:visible; }
-.egg .eshape{ fill: var(--paper); stroke: var(--ink); stroke-width: 3; }
-.egg.dragging{ cursor: grabbing; }
-.egg.big{ width: 58px; height: 74px; }
-.egg.tiny{ width: 14px; height: 18px; }
+.egg .eshape{ fill:var(--paper); stroke:var(--ink); stroke-width:6; }
+.egg.snap{ transition:left .16s steps(4), top .16s steps(4); }
+.egg.fly{ transition:left .18s steps(6), top .18s steps(6), transform .18s steps(6); }
+.egg.grab{ cursor:grabbing; z-index:40; }
+.egg.big{ width:104px; height:132px; }
+.egg.tiny{ width:20px; height:26px; }
 .egg.square .eshape{ display:none; }
 .egg.square .esquare{ display:block !important; }
 .egg .esquare{ display:none; }
 .egg.legs .elegs{ display:block !important; }
 .egg .elegs{ display:none; }
-.egg.rolling{ animation: rollaway 900ms steps(12) forwards; }
-@keyframes rollaway{
-  to{ transform: translateX(160px) rotate(720deg); opacity:0; }
-}
 
-/* egg while being dragged lives in the drag layer */
-.drag-layer{
-  position: fixed; inset: 0;
-  pointer-events: none;
-  z-index: 60;
+.drag-layer{ position:absolute; inset:0; pointer-events:none; z-index:45; }
+
+/* ---------- dialogs ---------- */
+#dialogs{ position:absolute; inset:0; pointer-events:none; }
+.dialog{
+  position:absolute; pointer-events:auto;
+  left:50%; top:46%; transform:translate(-50%,-50%);
+  width:420px; max-width:88%;
+  background:var(--paper); border:2px solid var(--ink);
+  box-shadow:0 0 0 2px var(--paper), 4px 4px 0 2px var(--ink);
+  padding:22px 20px 16px; text-align:center;
 }
-.drag-layer .egg{ position: absolute; }
+.dialog .dlg-icon{ font-family:var(--mono); font-weight:700; border:2px solid var(--ink); width:42px; height:42px; line-height:38px; margin:0 auto 12px; font-size:24px; }
+.dialog .dlg-text{ font-size:22px; font-weight:700; line-height:1.35; white-space:pre-line; letter-spacing:.5px; text-transform:uppercase; }
+.dialog .dlg-buttons{ margin-top:18px; display:flex; gap:14px; justify-content:center; flex-wrap:wrap; }
+.dialog button{
+  font-family:var(--font); font-size:19px; font-weight:700; padding:6px 20px; min-width:84px;
+  background:var(--paper); color:var(--ink); border:1px solid var(--ink); border-radius:8px; cursor:pointer;
+}
+.dialog button.default{ box-shadow:0 0 0 2px var(--ink); margin:2px; }
+.dialog button:active{ background:var(--ink); color:var(--paper); }
+/* crude progress bar for chaos dialogs */
+.dlg-bar{ margin-top:14px; height:22px; border:2px solid var(--ink); position:relative; }
+.dlg-bar > i{ position:absolute; inset:2px auto 2px 2px; background:repeating-linear-gradient(45deg,var(--ink) 0 4px,transparent 4px 8px); width:0; }
+
+/* ---------- party ---------- */
+.confetti{ position:absolute; inset:0; z-index:55; pointer-events:none; }
+.balloons{ position:absolute; inset:0; z-index:54; pointer-events:none; overflow:hidden; }
+.balloon{ position:absolute; width:44px; height:56px; border:3px solid var(--ink); border-radius:50%; background:var(--paper); }
+.balloon::after{ content:""; position:absolute; left:50%; top:100%; width:2px; height:80px; background:var(--ink); }
+.bday-text{
+  position:absolute; left:0; right:0; top:6px; z-index:58; text-align:center;
+  font-weight:700; font-size:40px; letter-spacing:2px; text-transform:uppercase; pointer-events:none; display:none;
+}
+.bday-text.on{ display:block; animation:flash .38s steps(1) infinite; }
+@keyframes flash{ 0%{color:#000} 50%{color:#fff; text-shadow:0 0 0 #000,3px 0 0 #000,-3px 0 0 #000,0 3px 0 #000,0 -3px 0 #000} 100%{color:#000} }
 
 /* ---------- mute ---------- */
 .mute{
-  position: fixed;
-  right: calc(env(safe-area-inset-right) + 10px);
-  bottom: calc(env(safe-area-inset-bottom) + 10px);
-  z-index: 70;
-  font-family: var(--mono);
-  font-size: 11px;
-  font-weight: 700;
-  padding: 4px 7px;
-  background: var(--paper);
-  color: var(--ink);
-  border: 1px solid var(--ink);
-  box-shadow: 1px 1px 0 0 var(--ink);
+  position:fixed; right:calc(env(safe-area-inset-right) + 10px); bottom:calc(env(safe-area-inset-bottom) + 10px); z-index:70;
+  font-family:var(--mono); font-size:12px; font-weight:700; padding:5px 8px;
+  background:var(--paper); color:var(--ink); border:1px solid var(--ink); box-shadow:1px 1px 0 0 var(--ink);
 }
-.mute:active{ box-shadow: none; transform: translate(1px,1px); }
+.mute:active{ box-shadow:none; transform:translate(1px,1px); }
 
-/* ---------- dialogs (system alerts) ---------- */
-.dialog-layer{
-  position: fixed; inset: 0;
-  z-index: 80;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 16px;
+/* ---------- portrait blocker ---------- */
+.rotate{
+  position:fixed; inset:0; z-index:200; display:none;
+  background-color:var(--desk);
+  background-image:
+    linear-gradient(45deg,var(--desk-dither) 25%,transparent 25%,transparent 75%,var(--desk-dither) 75%),
+    linear-gradient(45deg,var(--desk-dither) 25%,transparent 25%,transparent 75%,var(--desk-dither) 75%);
+  background-size:4px 4px; background-position:0 0,2px 2px;
+  flex-direction:column; align-items:center; justify-content:center; gap:22px; text-align:center;
+  padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
 }
-.dialog{
-  position: relative;
-  width: 100%;
-  max-width: 320px;
-  background: var(--paper);
-  border: 2px solid var(--ink);
-  box-shadow: 0 0 0 2px var(--paper), 3px 3px 0 2px var(--ink);
-  padding: 16px 14px 12px;
-  text-align: center;
-}
-.dialog + .dialog{
-  /* stacked / behind another dialog glitch offset handled inline */
-}
-.dialog .dlg-icon{
-  font-family: var(--mono);
-  font-weight: 700;
-  border: 2px solid var(--ink);
-  width: 34px; height: 34px;
-  line-height: 30px;
-  margin: 0 auto 8px;
-  font-size: 20px;
-}
-.dialog .dlg-text{
-  font-size: 14px;
-  font-weight: 700;
-  line-height: 1.35;
-  white-space: pre-line;
-  letter-spacing: .5px;
-  text-transform: uppercase;
-}
-.dialog .dlg-buttons{
-  margin-top: 12px;
-  display: flex;
-  gap: 10px;
-  justify-content: center;
-  flex-wrap: wrap;
-}
-.dialog button{
-  font-family: var(--font);
-  font-size: 13px;
-  font-weight: 700;
-  padding: 4px 14px;
-  min-width: 62px;
-  background: var(--paper);
-  color: var(--ink);
-  border: 1px solid var(--ink);
-  border-radius: 6px; /* period-accurate rounded OK button */
-  cursor: pointer;
-}
-.dialog button.default{
-  box-shadow: 0 0 0 2px var(--ink);
-  margin: 2px;
-}
-.dialog button:active{ background: var(--ink); color: var(--paper); }
+.rotate-icon{ width:110px; height:110px; }
+.rotate-icon .ln{ stroke-width:5; fill:var(--paper); }
+.rotate-icon line.ln{ fill:none; }
+.rotate-icon path.ln{ fill:none; }
+.rotate-text{ font-size:24px; font-weight:700; letter-spacing:2px; line-height:1.4; }
 
-/* ---------- confetti / balloons / birthday ---------- */
-.confetti{
-  position: fixed; inset: 0;
-  z-index: 75;
-  pointer-events: none;
-}
-.balloons{
-  position: fixed; inset: 0;
-  z-index: 74;
-  pointer-events: none;
-  overflow: hidden;
-}
-.balloon{
-  position: absolute;
-  width: 34px; height: 44px;
-  border: 2px solid var(--ink);
-  border-radius: 50%;
-  background: var(--paper);
-}
-.balloon::after{
-  content:""; position:absolute; left:50%; top:100%;
-  width:1px; height:60px; background: var(--ink);
-}
-.bday-text{
-  position: fixed;
-  left: 0; right: 0;
-  top: calc(env(safe-area-inset-top) + 4px);
-  z-index: 78;
-  text-align: center;
-  font-family: var(--font);
-  font-weight: 700;
-  font-size: clamp(20px, 7vw, 30px);
-  letter-spacing: 1px;
-  text-transform: uppercase;
-  pointer-events: none;
-  display: none;
-}
-.bday-text.on{ display: block; animation: flash 380ms steps(1) infinite; }
-@keyframes flash{
-  0%{ color:#000; }
-  50%{ color:#fff; text-shadow: 0 0 0 #000, 2px 0 0 #000, -2px 0 0 #000, 0 2px 0 #000, 0 -2px 0 #000; }
-  100%{ color:#000; }
+/* show blocker only on phone-sized portrait screens */
+@media (orientation:portrait) and (max-width:900px){
+  .rotate{ display:flex; }
 }
 
-/* small screens */
-@media (max-width: 360px){
-  .feed-title{ font-size: 24px; }
-  .basket{ height: 66px; }
-}
-@media (max-height: 620px){
-  .eggman{ max-height: 240px; }
-}
-
-[hidden]{ display: none !important; }
+[hidden]{ display:none !important; }

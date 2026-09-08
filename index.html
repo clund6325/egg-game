@@ -15,115 +15,153 @@
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
-  <!-- The whole thing lives inside one crude "application window" -->
+  <!-- pale dithered desktop fills the viewport; the scaled 960x540 stage sits centered -->
   <div id="desk">
-    <div id="window" class="window" role="application" aria-label="Egg">
-      <!-- title bar -->
-      <div class="titlebar">
-        <div class="closebox" aria-hidden="true"></div>
-        <div class="titlebar-lines" aria-hidden="true"></div>
-        <div class="title">Egg</div>
-        <div class="titlebar-lines" aria-hidden="true"></div>
+    <div id="stage" aria-label="Egg">
+
+      <!-- window chrome -->
+      <div class="win-chrome">
+        <div class="titlebar">
+          <div class="closebox"></div>
+          <div class="titlebar-lines"></div>
+          <div class="title">Egg</div>
+          <div class="titlebar-lines"></div>
+        </div>
+        <div class="menubar" id="menubar">
+          <span>File</span><span>Egg</span><span>Special</span>
+        </div>
       </div>
 
-      <!-- menu-ish strip -->
-      <div class="menubar" aria-hidden="true">
-        <span>File</span><span>Egg</span><span>Special</span>
-      </div>
-
-      <div id="stage" class="stage">
-        <!-- header -->
+      <!-- heads-up text -->
+      <div class="hud">
         <div id="feed-title" class="feed-title">FEED EGGS</div>
-
-        <!-- counter readout -->
-        <div class="counter-wrap">
-          <div id="counter" class="counter">0 EGGS</div>
-        </div>
-
-        <!-- Eggman -->
-        <div id="eggman-area" class="eggman-area">
-          <svg id="eggman" class="eggman" viewBox="0 0 200 250" xmlns="http://www.w3.org/2000/svg" aria-label="Eggman">
-            <!-- FRONT view -->
-            <g id="eg-front">
-              <!-- legs -->
-              <path class="ln" d="M82,210 L78,240" />
-              <path class="ln" d="M118,210 L122,240" />
-              <path class="ln" d="M70,240 L86,240" />
-              <path class="ln" d="M114,240 L130,240" />
-              <!-- arms -->
-              <path class="ln" d="M38,150 L14,138" />
-              <path class="ln" d="M162,150 L186,138" />
-              <!-- body -->
-              <path id="eg-body" class="eggbody" d="M100,14 C62,14 40,66 40,120 C40,178 66,214 100,214 C134,214 160,178 160,120 C160,66 138,14 100,14 Z" />
-              <!-- pants band (drops on reveal) -->
-              <g id="eg-pants">
-                <path class="pants" d="M44,168 C44,200 66,214 100,214 C134,214 156,200 156,168 L156,196 C156,206 132,214 100,214 C68,214 44,206 44,196 Z" />
-              </g>
-              <!-- eyes -->
-              <circle id="eg-eyeL" class="eye" cx="82" cy="98" r="4.5" />
-              <circle id="eg-eyeR" class="eye" cx="118" cy="98" r="4.5" />
-              <!-- mouth -->
-              <ellipse id="eg-mouth" class="mouth" cx="100" cy="150" rx="17" ry="11" />
-            </g>
-
-            <!-- BACK view (nude egg) -->
-            <g id="eg-back" hidden>
-              <!-- legs -->
-              <path class="ln" d="M82,210 L78,240" />
-              <path class="ln" d="M118,210 L122,240" />
-              <path class="ln" d="M70,240 L86,240" />
-              <path class="ln" d="M114,240 L130,240" />
-              <!-- dropped pants around ankles -->
-              <ellipse class="pants" cx="100" cy="236" rx="46" ry="10" />
-              <!-- arms -->
-              <path class="ln" d="M38,150 L16,160" />
-              <path class="ln" d="M162,150 L184,160" />
-              <!-- body -->
-              <path class="eggbody" d="M100,14 C62,14 40,66 40,120 C40,178 66,214 100,214 C134,214 160,178 160,120 C160,66 138,14 100,14 Z" />
-              <!-- butt cheeks -->
-              <path class="ln" d="M100,150 C86,150 74,168 74,188 C74,204 86,212 100,212" />
-              <path class="ln" d="M100,150 C114,150 126,168 126,188 C126,204 114,212 100,212" />
-              <!-- crack -->
-              <path class="ln" d="M100,150 L100,212" />
-            </g>
-
-            <!-- party hat (birthday) -->
-            <g id="eg-hat" hidden>
-              <path class="hat" d="M100,-26 L128,26 L72,26 Z" />
-              <circle class="hat-pom" cx="100" cy="-30" r="7" />
-              <path class="ln" d="M78,14 L122,14" />
-              <path class="ln" d="M80,2 L120,2" />
-            </g>
-          </svg>
-        </div>
-
-        <!-- egg source / basket -->
-        <div id="basket-area" class="basket-area">
-          <div id="basket" class="basket" aria-label="Egg basket">
-            <div class="basket-lip" aria-hidden="true"></div>
-            <div id="eggs" class="eggs"></div>
-            <div class="basket-front" aria-hidden="true">EGGS</div>
-          </div>
-        </div>
+        <div class="counter-wrap"><span id="counter" class="counter">0 EGGS</span></div>
       </div>
+
+      <!-- line-art layer: Eggman + basket -->
+      <svg id="eggSvg" viewBox="0 0 960 540" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+        <!-- egg basket / source -->
+        <g id="basketArt">
+          <path class="ln2" d="M690,470 L890,470 L872,388 L708,388 Z"/>
+          <line class="ln2" x1="700" y1="418" x2="880" y2="418"/>
+          <path class="ln2" d="M700,388 q90,-26 180,0"/>
+          <text x="790" y="452" class="basket-label">EGGS</text>
+        </g>
+
+        <!-- EGGMAN: one model, layered groups -->
+        <g id="eggman">
+          <g id="eg-bob">
+            <g id="eg-turn">
+
+              <!-- legs stay planted -->
+              <g id="eg-legs">
+                <g id="eg-leg-l">
+                  <line class="ln" x1="-46" y1="28" x2="-46" y2="92"/>
+                  <ellipse class="foot" cx="-52" cy="98" rx="30" ry="11"/>
+                </g>
+                <g id="eg-leg-r">
+                  <line class="ln" x1="46" y1="28" x2="46" y2="92"/>
+                  <ellipse class="foot" cx="52" cy="98" rx="30" ry="11"/>
+                </g>
+              </g>
+
+              <!-- trousers: worn on hips, drop straight to ankles -->
+              <g id="eg-pants" hidden>
+                <path class="pants" d="M-72,6 L72,6 L70,74 L14,74 L8,30 L-8,30 L-14,74 L-70,74 Z"/>
+                <line class="ln" x1="-72" y1="20" x2="72" y2="20"/>
+              </g>
+
+              <!-- torso bends over the hips -->
+              <g id="eg-torso">
+                <!-- body: squat wide egg -->
+                <path id="eg-body" class="eggbody"
+                  d="M0,-182 C-92,-182 -128,-96 -128,-26 C-128,44 -70,44 0,44 C70,44 128,44 128,-26 C128,-96 92,-182 0,-182 Z"/>
+
+                <!-- tiny arms -->
+                <g id="eg-arms">
+                  <path class="ln" d="M-120,-58 q-34,6 -46,30"/>
+                  <path class="ln" d="M120,-58 q34,6 46,30"/>
+                </g>
+                <!-- chaos: extra tiny arm -->
+                <path id="eg-arm3" class="ln" d="M120,-30 q34,10 40,34" hidden/>
+                <!-- chaos: necktie -->
+                <path id="eg-tie" class="tie" d="M0,-96 l-10,10 l10,40 l10,-40 z" hidden/>
+
+                <!-- FRONT face -->
+                <g id="eg-face">
+                  <circle class="eye" cx="-30" cy="-112" r="17"/>
+                  <circle class="eye" cx="30" cy="-112" r="17"/>
+                  <circle class="pupil" cx="-30" cy="-110" r="6"/>
+                  <circle class="pupil" cx="30" cy="-110" r="6"/>
+                  <ellipse id="eg-mouth" class="mouth" cx="0" cy="-40" rx="44" ry="36"/>
+                </g>
+
+                <!-- front bush (between legs), revealed in the payoff -->
+                <g id="eg-bush" hidden>
+                  <path class="bush" d="M0,26 l-4,20 M0,26 l4,20 M0,24 l-12,16 M0,24 l12,16 M0,22 l-18,10 M0,22 l18,10 M0,28 l0,20"/>
+                </g>
+
+                <!-- BACK view: two round cheeks + bold crack + hole -->
+                <g id="eg-butt" hidden>
+                  <path class="ln" d="M0,-52 C-46,-40 -52,10 -30,44"/>
+                  <path class="ln" d="M0,-52 C46,-40 52,10 30,44"/>
+                  <line class="ln" x1="0" y1="-52" x2="0" y2="44" stroke-width="6"/>
+                  <circle id="eg-hole" class="hole" cx="0" cy="2" r="12"/>
+                  <!-- chaos: tiny party hat on the butt -->
+                  <path id="eg-butt-hat" class="hat" d="M40,-14 L58,20 L22,20 Z" hidden/>
+                </g>
+
+                <!-- party hat on head -->
+                <g id="eg-hat" hidden>
+                  <path class="hat" d="M0,-250 L44,-176 L-44,-176 Z"/>
+                  <circle class="pompom" cx="0" cy="-256" r="10"/>
+                </g>
+              </g>
+            </g>
+          </g>
+        </g>
+
+        <!-- chaos: a second tiny eggman that wanders the background -->
+        <g id="mini-eggman" hidden>
+          <path class="eggbody" d="M0,-40 C-20,-40 -28,-20 -28,-6 C-28,10 -16,10 0,10 C16,10 28,10 28,-6 C28,-20 20,-40 0,-40 Z"/>
+          <circle class="eye" cx="-7" cy="-22" r="4"/>
+          <circle class="eye" cx="7" cy="-22" r="4"/>
+          <ellipse class="mouth" cx="0" cy="-6" rx="9" ry="7"/>
+          <line class="ln" x1="-9" y1="10" x2="-9" y2="22"/>
+          <line class="ln" x1="9" y1="10" x2="9" y2="22"/>
+        </g>
+      </svg>
+
+      <!-- eggs live here (HTML, logical coords) -->
+      <div id="play"></div>
+
+      <!-- dialogs -->
+      <div id="dialogs"></div>
+
+      <!-- party effects live inside the stage so they scale with it -->
+      <canvas id="confetti" class="confetti"></canvas>
+      <div id="balloons" class="balloons"></div>
+      <div id="bday-text" class="bday-text"></div>
     </div>
-
-    <!-- mute control -->
-    <button id="mute" class="mute" aria-label="Sound on/off" title="Sound">SND: ON</button>
   </div>
 
-  <!-- drag layer (eggs move here while dragging) -->
+  <!-- portrait blocker (phones): outside the stage, never scaled -->
+  <div id="rotate" class="rotate">
+    <svg viewBox="0 0 120 120" class="rotate-icon" aria-hidden="true">
+      <rect x="34" y="14" width="52" height="92" rx="6" class="ln"/>
+      <line x1="34" y1="26" x2="86" y2="26" class="ln"/>
+      <line x1="34" y1="94" x2="86" y2="94" class="ln"/>
+      <path class="ln" d="M18,64 a44,44 0 0 1 84,-8"/>
+      <path class="ln" d="M102,40 l0,18 l-18,0"/>
+    </svg>
+    <div class="rotate-text">ROTATE PHONE<br/>TO FEED EGGS</div>
+  </div>
+
+  <!-- mute control (outside stage) -->
+  <button id="mute" class="mute" aria-label="Sound on/off">SND: ON</button>
+
+  <!-- drag layer (unused for positioning now, kept for z-order overlays) -->
   <div id="drag-layer" class="drag-layer" aria-hidden="true"></div>
-
-  <!-- party effects -->
-  <canvas id="confetti" class="confetti" aria-hidden="true"></canvas>
-  <div id="balloons" class="balloons" aria-hidden="true"></div>
-  <div id="bday-text" class="bday-text" aria-hidden="true"></div>
-
-  <!-- dialog layer -->
-  <div id="dialog-layer" class="dialog-layer" hidden>
-    <div id="dialogs"></div>
-  </div>
 
   <script src="game.js"></script>
 </body>
