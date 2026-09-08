@@ -261,31 +261,37 @@ function refillBasket(target){
 }
 function clearEggs(){ dom.play.innerHTML=''; occupied = new Set(); }
 
-/* ---- mouth acceptance region, derived from the ACTUAL RENDERED mouth ----
+/* ---- VERY FORGIVING mouth target, from the ACTUAL RENDERED mouth ----
    The mouth's on-screen rect already follows every transform (walk, scale,
    grow, bend) and the responsive stage scale, so it can never drift from the
-   artwork. ~15% padding makes finger input forgiving. */
-const MOUTH_PAD = 1.15;
-function mouthHitEllipse(){
-  const m = dom.egMouth.getBoundingClientRect();        // viewport px
-  return { cx:m.left+m.width/2, cy:m.top+m.height/2,
-           rx:(m.width/2)*MOUTH_PAD, ry:(m.height/2)*MOUTH_PAD, box:m };
+   artwork. We pad it 30% on every side and favour eating heavily: a drop that
+   a human would call "on/in the mouth" counts. */
+function mouthEatRect(){
+  const m = dom.egMouth.getBoundingClientRect();          // viewport px, source of truth
+  const padX = m.width * 0.30, padY = m.height * 0.30;
+  return { left:m.left-padX, right:m.right+padX, top:m.top-padY, bottom:m.bottom+padY,
+           width:m.width+2*padX, height:m.height+2*padY, mouthRect:m };
 }
-function eggEatenByGeometry(el){
-  const z = mouthHitEllipse();
+/* debug snapshot of the last release (dev only) */
+let _mouthDebug = { mouthRect:null, eatRect:null, lastRelease:null, lastEggRect:null, lastResult:null };
+/* Eaten if ANY of: release point in eatRect, egg center in eatRect, or the egg
+   box overlaps eatRect AT ALL (any overlap, no minimum). */
+function eggEaten(el, relX, relY){
+  const R = mouthEatRect();
   const e = el.getBoundingClientRect();
-  const ex = e.left+e.width/2, ey = e.top+e.height/2;
-  // (a) egg CENTER inside the padded visible mouth ellipse
-  const dx=(ex-z.cx)/z.rx, dy=(ey-z.cy)/z.ry;
-  if(dx*dx + dy*dy <= 1) return true;
-  // (b) egg SUBSTANTIALLY overlaps the visible black mouth box
-  const ox = Math.max(0, Math.min(e.right, z.box.right) - Math.max(e.left, z.box.left));
-  const oy = Math.max(0, Math.min(e.bottom, z.box.bottom) - Math.max(e.top, z.box.top));
-  return (ox*oy) > 0.30 * (e.width*e.height);
+  const ecx = e.left+e.width/2, ecy = e.top+e.height/2;
+  const ptIn  = (relX!=null && relY!=null) && relX>=R.left && relX<=R.right && relY>=R.top && relY<=R.bottom;
+  const ctrIn = ecx>=R.left && ecx<=R.right && ecy>=R.top && ecy<=R.bottom;
+  const overlap = !(e.right < R.left || e.left > R.right || e.bottom < R.top || e.top > R.bottom);
+  const eaten = ptIn || ctrIn || overlap;
+  _mouthDebug = { mouthRect:R.mouthRect, eatRect:R,
+                  lastRelease:(relX!=null?{x:relX,y:relY}:null), lastEggRect:e,
+                  lastResult: eaten?'EATEN':'HOME' };
+  return eaten;
 }
 function mouthCenterLogical(){                            // for the eat animation target
-  const z = mouthHitEllipse(), st = stageMetrics();
-  return { x:(z.cx - st.left)/st.scale, y:(z.cy - st.top)/st.scale };
+  const m = dom.egMouth.getBoundingClientRect(), st = stageMetrics();
+  return { x:(m.left+m.width/2 - st.left)/st.scale, y:(m.top+m.height/2 - st.top)/st.scale };
 }
 
 /* ---- robust drag: EVERY completed gesture ends EATEN or HOME ---- */
@@ -325,10 +331,16 @@ function attachEggDrag(el){
     s = null;
   }
 
-  el.addEventListener('pointerup', () => {
+  el.addEventListener('pointerup', (e) => {
     if(!s || s.done) return;
+    // capture release point + evaluate collision WHILE the egg is still at the
+    // drop location, before any snapback / cleanup.
+    const relX = e.clientX, relY = e.clientY;
     const tap = s.moved < 12 && (Date.now()-s.downT) < 260;
-    finalize(tap || eggEatenByGeometry(el));
+    const hit = eggEaten(el, relX, relY);          // records _mouthDebug
+    const eaten = tap || hit;
+    _mouthDebug.lastResult = eaten ? 'EATEN' : 'HOME';
+    finalize(eaten);
   });
   el.addEventListener('pointercancel', () => finalize(false));
   el.addEventListener('lostpointercapture', () => finalize(false));
@@ -743,24 +755,34 @@ window.addEventListener('dragstart', e => e.preventDefault());
 function boot(){ if(saveState.birthdayShown) startChaos(); else startCanonical(); }
 boot();
 
-/* ---- development-only mouth debug overlay (hidden during normal play) ---- */
-let _dbgEl=null, _dbgRAF=null;
+/* ---- development-only mouth debug overlay (hidden during normal play) ----
+   green rectangle = the actual forgiving eatRect used by gameplay
+   red dot        = last pointer-release position */
+let _dbgRect=null, _dbgDot=null, _dbgRAF=null;
 function debugMouth(on){
   if(on){
-    if(!_dbgEl){
-      _dbgEl=document.createElement('div');
-      _dbgEl.style.cssText='position:fixed;z-index:9999;border:2px solid red;'+
-        'background:rgba(255,0,0,.22);border-radius:50%;pointer-events:none;box-sizing:border-box;';
-      document.body.appendChild(_dbgEl);
+    if(!_dbgRect){
+      _dbgRect=document.createElement('div');
+      _dbgRect.style.cssText='position:fixed;z-index:9999;border:2px solid #0a0;'+
+        'background:rgba(0,200,0,.22);pointer-events:none;box-sizing:border-box;';
+      document.body.appendChild(_dbgRect);
+      _dbgDot=document.createElement('div');
+      _dbgDot.style.cssText='position:fixed;z-index:10000;width:10px;height:10px;margin:-5px 0 0 -5px;'+
+        'border-radius:50%;background:red;pointer-events:none;';
+      document.body.appendChild(_dbgDot);
     }
-    _dbgEl.hidden=false;
-    (function loop(){ const z=mouthHitEllipse();
-      _dbgEl.style.left=(z.cx-z.rx)+'px'; _dbgEl.style.top=(z.cy-z.ry)+'px';
-      _dbgEl.style.width=(z.rx*2)+'px'; _dbgEl.style.height=(z.ry*2)+'px';
+    _dbgRect.hidden=false; _dbgDot.hidden=false;
+    (function loop(){ const R=mouthEatRect();
+      _dbgRect.style.left=R.left+'px'; _dbgRect.style.top=R.top+'px';
+      _dbgRect.style.width=R.width+'px'; _dbgRect.style.height=R.height+'px';
+      const r=_mouthDebug.lastRelease;
+      if(r){ _dbgDot.hidden=false; _dbgDot.style.left=r.x+'px'; _dbgDot.style.top=r.y+'px'; }
+      else _dbgDot.hidden=true;
       _dbgRAF=requestAnimationFrame(loop); })();
   } else {
     if(_dbgRAF) cancelAnimationFrame(_dbgRAF); _dbgRAF=null;
-    if(_dbgEl) _dbgEl.hidden=true;
+    if(_dbgRect) _dbgRect.hidden=true;
+    if(_dbgDot) _dbgDot.hidden=true;
   }
   return on;
 }
@@ -781,7 +803,8 @@ window.EGG = {
   press(label){ const b=[...document.querySelectorAll('.dialog button')]; const t=label?b.find(x=>x.textContent===label):b[b.length-1]; if(t) t.click(); return !!t; },
   locked(){ return feedingLocked; },
   eggs(){ return [...dom.play.querySelectorAll('.egg')]; },
-  mouth(){ return mouthHitEllipse(); }
+  mouth(){ return mouthEatRect(); },
+  getMouthDebug(){ return _mouthDebug; }
 };
 
 if('serviceWorker' in navigator){
