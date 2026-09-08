@@ -15,15 +15,29 @@ const birthdayConfig = {
    (or run EGG.reset() in the console). */
 const SAVE_KEY = 'eggGameBirthdayProgress';
 const MUTE_KEY = 'eggGameMuted';
+const SAVE_VERSION = 2;   // bump to force everyone through the birthday run once more
+
+function freshSave(){ return { version:SAVE_VERSION, canonicalCompleted:false, birthdayShown:false, playCount:0 }; }
 
 /* ==========================================================================
    SAVE STATE
+   Chaos mode is gated on birthdayShown — NOT canonicalCompleted — so the
+   birthday reveal can never be skipped on a first real playthrough.
    ========================================================================== */
 let saveState = loadSave();
 function loadSave(){
-  try{ const o = JSON.parse(localStorage.getItem(SAVE_KEY)||'');
-       return { canonicalCompleted:!!o.canonicalCompleted, playCount:o.playCount|0 }; }
-  catch(e){ return { canonicalCompleted:false, playCount:0 }; }
+  try{
+    const o = JSON.parse(localStorage.getItem(SAVE_KEY) || '');
+    if(!o || o.version !== SAVE_VERSION){          // missing/old schema -> migrate to a clean canonical run
+      const f = freshSave();
+      try{ localStorage.setItem(SAVE_KEY, JSON.stringify(f)); }catch(e){}
+      return f;
+    }
+    return { version:SAVE_VERSION,
+             canonicalCompleted:!!o.canonicalCompleted,
+             birthdayShown:!!o.birthdayShown,
+             playCount:o.playCount|0 };
+  }catch(e){ return freshSave(); }
 }
 function persist(){ try{ localStorage.setItem(SAVE_KEY, JSON.stringify(saveState)); }catch(e){} }
 
@@ -50,7 +64,7 @@ const dom = {
   svg:$('eggSvg'),
   eggman:$('eggman'), egBob:$('eg-bob'), egTurn:$('eg-turn'), egTorso:$('eg-torso'),
   egLegs:$('eg-legs'), egPants:$('eg-pants'),
-  egFace:$('eg-face'), egButt:$('eg-butt'), egMouth:$('eg-mouth'),
+  egFace:$('eg-face'), egButt:$('eg-butt'), egMouth:$('eggman-mouth'),
   egBush:$('eg-bush'), egHat:$('eg-hat'), egButtHat:$('eg-butt-hat'),
   egTie:$('eg-tie'), egArm3:$('eg-arm3'),
   mini:$('mini-eggman'),
@@ -155,8 +169,6 @@ const EM = {
   place(x,y){ setWalk(0); this.x=x; if(y!=null) this.y=y; this.apply(); },
   async walkTo(x, dur){ setWalk(dur); dom.eggman.classList.add('walking'); this.x=x; this.apply();
                         await sleep(dur); dom.eggman.classList.remove('walking'); setWalk(0); },
-  mouth(){ return { x:this.x, y:this.y-40 }; },
-  eatZone(){ return { x:this.x, y:this.y-70, rx:135, ry:120 }; },
   eating(on){ dom.eggman.classList.toggle('eating', on); },
   _bend:0,
   face(side){ setShown(dom.egFace, side!=='back'); setShown(dom.egButt, side==='back'); },
@@ -249,15 +261,36 @@ function refillBasket(target){
 }
 function clearEggs(){ dom.play.innerHTML=''; occupied = new Set(); }
 
+/* ---- mouth acceptance region, derived from the ACTUAL RENDERED mouth ----
+   The mouth's on-screen rect already follows every transform (walk, scale,
+   grow, bend) and the responsive stage scale, so it can never drift from the
+   artwork. ~15% padding makes finger input forgiving. */
+const MOUTH_PAD = 1.15;
+function mouthHitEllipse(){
+  const m = dom.egMouth.getBoundingClientRect();        // viewport px
+  return { cx:m.left+m.width/2, cy:m.top+m.height/2,
+           rx:(m.width/2)*MOUTH_PAD, ry:(m.height/2)*MOUTH_PAD, box:m };
+}
+function eggEatenByGeometry(el){
+  const z = mouthHitEllipse();
+  const e = el.getBoundingClientRect();
+  const ex = e.left+e.width/2, ey = e.top+e.height/2;
+  // (a) egg CENTER inside the padded visible mouth ellipse
+  const dx=(ex-z.cx)/z.rx, dy=(ey-z.cy)/z.ry;
+  if(dx*dx + dy*dy <= 1) return true;
+  // (b) egg SUBSTANTIALLY overlaps the visible black mouth box
+  const ox = Math.max(0, Math.min(e.right, z.box.right) - Math.max(e.left, z.box.left));
+  const oy = Math.max(0, Math.min(e.bottom, z.box.bottom) - Math.max(e.top, z.box.top));
+  return (ox*oy) > 0.30 * (e.width*e.height);
+}
+function mouthCenterLogical(){                            // for the eat animation target
+  const z = mouthHitEllipse(), st = stageMetrics();
+  return { x:(z.cx - st.left)/st.scale, y:(z.cy - st.top)/st.scale };
+}
+
 /* ---- robust drag: EVERY completed gesture ends EATEN or HOME ---- */
 function attachEggDrag(el){
   let s = null;   // active drag session
-
-  function inEatZone(cx, cy){
-    const z = EM.eatZone();
-    const dx=(cx-z.x)/z.rx, dy=(cy-z.y)/z.ry;
-    return dx*dx + dy*dy <= 1;
-  }
 
   el.addEventListener('pointerdown', (e) => {
     if(feedingLocked || el._eaten) return;
@@ -295,7 +328,7 @@ function attachEggDrag(el){
   el.addEventListener('pointerup', () => {
     if(!s || s.done) return;
     const tap = s.moved < 12 && (Date.now()-s.downT) < 260;
-    finalize(tap || inEatZone(s.lastX, s.lastY));
+    finalize(tap || eggEatenByGeometry(el));
   });
   el.addEventListener('pointercancel', () => finalize(false));
   el.addEventListener('lostpointercapture', () => finalize(false));
@@ -310,7 +343,7 @@ function snapHome(el){
 function flyAndEat(el){
   if(el._eaten) return; el._eaten = true;
   if(el._slot!=null) occupied.delete(el._slot);
-  const m = EM.mouth();
+  const m = mouthCenterLogical();
   el.classList.add('fly');
   positionEgg(el, m.x, m.y);
   el.style.transform = 'scale(0.12)';
@@ -466,15 +499,18 @@ async function canonicalWinSequence(){
   await EM.bend(true);
   // H. HOLD THE REVEAL (unobstructed)
   await sleep(2600);
-  // I. BIRTHDAY
+  // I. BIRTHDAY  — the ONLY place birthdayShown is ever set true
   await dialogAsync({ icon:'*', text:'HAPPY BIRTHDAY, '+birthdayConfig.sisterName+'.', buttons:[{label:'OK',cls:'default'}] });
   startParty();
+  // the actual birthday content is now on screen: persist it so Chaos is unlocked
+  saveState.birthdayShown = true;
+  saveState.canonicalCompleted = true;
+  persist();
   await dialogAsync({ icon:false,
     text:'YOU WON A NUDE EGG.\n\nYOU SHOULD BE ABLE TO LOOK AT\nA LITTLE PORN AT WORK.\n\n'+
          birthdayConfig.birthdayMessage.toUpperCase()+'\n\n— '+birthdayConfig.fromName,
     buttons:[{label:'PLAY AGAIN',cls:'default'}] });
-  // COMPLETE
-  saveState.canonicalCompleted = true;
+  // COMPLETE — first playthrough counts as play 1
   saveState.playCount += 1;
   persist();
   startChaos();
@@ -702,14 +738,42 @@ setInterval(ensureEggs, 800);
 document.addEventListener('contextmenu', e => e.preventDefault());
 window.addEventListener('dragstart', e => e.preventDefault());
 
-function boot(){ if(saveState.canonicalCompleted) startChaos(); else startCanonical(); }
+/* Chaos is unlocked ONLY once the birthday has actually been shown. If a save
+   somehow has canonicalCompleted but not birthdayShown, we replay canonical. */
+function boot(){ if(saveState.birthdayShown) startChaos(); else startCanonical(); }
 boot();
+
+/* ---- development-only mouth debug overlay (hidden during normal play) ---- */
+let _dbgEl=null, _dbgRAF=null;
+function debugMouth(on){
+  if(on){
+    if(!_dbgEl){
+      _dbgEl=document.createElement('div');
+      _dbgEl.style.cssText='position:fixed;z-index:9999;border:2px solid red;'+
+        'background:rgba(255,0,0,.22);border-radius:50%;pointer-events:none;box-sizing:border-box;';
+      document.body.appendChild(_dbgEl);
+    }
+    _dbgEl.hidden=false;
+    (function loop(){ const z=mouthHitEllipse();
+      _dbgEl.style.left=(z.cx-z.rx)+'px'; _dbgEl.style.top=(z.cy-z.ry)+'px';
+      _dbgEl.style.width=(z.rx*2)+'px'; _dbgEl.style.height=(z.ry*2)+'px';
+      _dbgRAF=requestAnimationFrame(loop); })();
+  } else {
+    if(_dbgRAF) cancelAnimationFrame(_dbgRAF); _dbgRAF=null;
+    if(_dbgEl) _dbgEl.hidden=true;
+  }
+  return on;
+}
 
 /* dev / test hooks */
 window.EGG = {
   get saveState(){ return saveState; },
+  getSaveState(){ return {...saveState}; },
+  /* EGG.reset() clears eggGameBirthdayProgress (canonicalCompleted, birthdayShown,
+     playCount) and reloads -> full canonical birthday run again. */
   reset(){ localStorage.removeItem(SAVE_KEY); location.reload(); },
-  chaos(){ saveState.canonicalCompleted=true; persist(); startChaos(); },
+  chaos(){ saveState.canonicalCompleted=true; saveState.birthdayShown=true; persist(); startChaos(); },
+  debugMouth,                       // EGG.debugMouth(true) / EGG.debugMouth(false)
   feed(){ if(activeController && !feedingLocked) activeController.feedEgg(); },
   counter(){ return dom.counter.textContent; },
   title(){ return dom.feedTitle.textContent; },
@@ -717,7 +781,7 @@ window.EGG = {
   press(label){ const b=[...document.querySelectorAll('.dialog button')]; const t=label?b.find(x=>x.textContent===label):b[b.length-1]; if(t) t.click(); return !!t; },
   locked(){ return feedingLocked; },
   eggs(){ return [...dom.play.querySelectorAll('.egg')]; },
-  em(){ return { x:EM.x, y:EM.y, zone:EM.eatZone() }; }
+  mouth(){ return mouthHitEllipse(); }
 };
 
 if('serviceWorker' in navigator){

@@ -85,7 +85,7 @@ html,body{
 #eg-torso{ transition:transform .6s steps(8); transform-origin:50% 92%; }
 #eg-pants{ transition:transform .55s steps(6); }
 
-.eating #eg-mouth{ rx:64px; ry:64px; }
+.eating #eggman-mouth{ rx:64px; ry:64px; }
 
 /* crude walk cycle */
 @keyframes bob{ 0%{transform:translateY(0)} 50%{transform:translateY(-9px)} 100%{transform:translateY(0)} }

@@ -1,5 +1,5 @@
 /* Simple offline cache for Egg. Bump CACHE when you change files. */
-const CACHE = 'egg-v2';
+const CACHE = 'egg-v3';
 const ASSETS = [
   './',
   './index.html',
