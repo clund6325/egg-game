@@ -94,8 +94,12 @@
                   <circle class="pupil" cx="-30" cy="-110" r="6"/>
                   <circle class="pupil" cx="30" cy="-110" r="6"/>
                   <ellipse id="eggman-mouth" class="mouth" cx="0" cy="-40" rx="44" ry="36"/>
-                  <!-- pinched CHEW mouth: visible art only; NOT used for collision -->
-                  <path id="eggman-chew" class="chew" d="M-26,-40 Q0,-47 26,-40 Q0,-33 -26,-40 Z" hidden/>
+                  <!-- closed CHEW mouth )────( : visible art only; NOT used for collision -->
+                  <g id="eggman-chew" hidden>
+                    <path class="chew" d="M-21,-52 Q-14,-40 -21,-28"/>    <!-- left  ) gentle bracket -->
+                    <path class="chew chew-bar" d="M-24,-40 L24,-40"/>    <!-- LONG solid center bar ──── -->
+                    <path class="chew" d="M21,-52 Q14,-40 21,-28"/>       <!-- right ( gentle bracket -->
+                  </g>
                 </g>
 
                 <!-- front bush (between legs), revealed in the payoff -->

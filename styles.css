@@ -90,10 +90,14 @@ html,body{
 
 /* CHEW: the open oval's black FILL is hidden (geometry unchanged, so the feeding
    collision target from getMouthEatRect stays identical); the pinched clamp shows */
-.eating #eggman-mouth{ fill:transparent; }
-.chew{ fill:#000; stroke:none; transform-box:fill-box; transform-origin:50% 50%; transition:transform .1s steps(3); }
-.chew.squish{ transform:scaleY(5.2); }     /* tall ~= open, collapses to pinched when removed */
-.chew.twitch{ transform:translateY(2px) scaleX(0.82); }
+/* while chewing, the open mouth (fill AND outline) is fully invisible via
+   opacity:0 — geometry (and thus getMouthEatRect) is completely unchanged */
+.eating #eggman-mouth{ opacity:0; }
+/* the closed )────( clamp: chunky black STROKE, no fill */
+.chew{ fill:none; stroke:#000; stroke-width:7; stroke-linecap:round; }
+.chew-bar{ stroke-width:8; }
+#eggman-chew{ transform-box:fill-box; transform-origin:50% 50%; }
+#eggman-chew.twitch{ transform:translateX(2px); }
 /* subtle "I have this egg" reaction when the mouth is armed during a drag */
 .armed #eggman-mouth{ rx:50px; ry:41px; }
 

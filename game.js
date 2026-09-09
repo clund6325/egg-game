@@ -175,19 +175,20 @@ const EM = {
   async walkTo(x, dur){ setWalk(dur); dom.eggman.classList.add('walking'); this.x=x; this.apply();
                         await sleep(dur); dom.eggman.classList.remove('walking'); setWalk(0); },
   eating(on){ dom.eggman.classList.toggle('eating', !!on); setShown(dom.egChew, !!on);
-              if(!on) dom.egChew.classList.remove('squish','twitch'); },
+              if(!on) dom.egChew.classList.remove('twitch'); },
   _chewTok:0,
-  /* the real per-egg chew: OPEN oval -> squish -> PINCHED clamp -> twitch -> reopen.
-     Purely visual; the collision element (#eggman-mouth) never changes geometry. */
+  /* per-egg chew: hide the OPEN mouth entirely, show the )────( clamp, twitch the
+     bar once/twice, then restore the open mouth. Purely visual; the collision
+     element (#eggman-mouth) never changes geometry (it's only opacity:0). */
   async chew(){
     const tok = ++this._chewTok;
-    this.eating(true); dom.egChew.classList.add('squish');   // start ~open height
-    await sleep(20);  if(tok!==this._chewTok) return; dom.egChew.classList.remove('squish'); // collapse to pinch
-    await sleep(120); if(tok!==this._chewTok) return; dom.egChew.classList.add('twitch');    // tiny chew twitch
-    await sleep(150); if(tok!==this._chewTok) return; dom.egChew.classList.remove('twitch');
-    dom.egChew.classList.add('squish');                       // expand = reopen
-    await sleep(110); if(tok!==this._chewTok) return;
-    this.eating(false);
+    this.eating(true);                                        // open mouth gone, clamp shown
+    await sleep(150); if(tok!==this._chewTok) return; dom.egChew.classList.add('twitch');
+    await sleep(90);  if(tok!==this._chewTok) return; dom.egChew.classList.remove('twitch');
+    await sleep(90);  if(tok!==this._chewTok) return; dom.egChew.classList.add('twitch');
+    await sleep(90);  if(tok!==this._chewTok) return; dom.egChew.classList.remove('twitch');
+    await sleep(20);  if(tok!==this._chewTok) return;
+    this.eating(false);                                       // open mouth restored
   },
   _bend:0,
   face(side){ setShown(dom.egFace, side!=='back'); setShown(dom.egButt, side==='back'); },
@@ -218,7 +219,7 @@ const EM = {
                  setT(dom.egTurn,'translate(-12 0)'); await sleep(70); } setT(dom.egTurn,null); },
   reset(){
     dom.eggman.classList.remove('walking','eating'); setWalk(0);
-    this._chewTok++; setShown(dom.egChew,false); dom.egChew.classList.remove('squish','twitch');  // mouth back to open
+    this._chewTok++; setShown(dom.egChew,false); dom.egChew.classList.remove('twitch');  // mouth back to open
     this.x=this.HOMEX; this.y=this.HOMEY; this.apply();
     setT(dom.egTurn,null); setT(dom.egTorso,null); setT(dom.egBob,null); setT(dom.egBush,null);
     this._bend=0; dom.egPants.style.transform='translateY(0)';
@@ -1223,6 +1224,9 @@ window.EGG = {
   reset(){ localStorage.removeItem(SAVE_KEY); location.reload(); },
   chaos(){ saveState.canonicalCompleted=true; saveState.birthdayShown=true; persist(); startChaos(); },
   debugMouth,                       // EGG.debugMouth(true) / EGG.debugMouth(false)
+  /* freeze the closed )────( clamp for inspection (open mouth hidden) */
+  debugChew(on){ EM._chewTok++; dom.egChew.classList.remove('twitch');
+    dom.eggman.classList.toggle('eating', !!on); setShown(dom.egChew, !!on); return on; },
   feed(){ if(activeController && !feedingLocked) activeController.feedEgg(); },
   counter(){ return dom.counter.textContent; },
   title(){ return dom.feedTitle.textContent; },
