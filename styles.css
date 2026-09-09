@@ -95,7 +95,7 @@ html,body{
 .eating #eggman-mouth{ opacity:0; }
 /* the closed )────( clamp: chunky black STROKE, no fill */
 .chew{ fill:none; stroke:#000; stroke-width:7; stroke-linecap:round; }
-.chew-bar{ stroke-width:8; }
+.chew-bar{ stroke-width:8; stroke-linecap:butt; }   /* flat ends so the bar doesn't reach into the brackets */
 #eggman-chew{ transform-box:fill-box; transform-origin:50% 50%; }
 #eggman-chew.twitch{ transform:translateX(2px); }
 /* subtle "I have this egg" reaction when the mouth is armed during a drag */
