@@ -76,6 +76,9 @@ html,body{
 .hat{ fill:var(--paper); stroke:var(--ink); stroke-width:5; }
 .pompom{ fill:#000; }
 .tie{ fill:var(--ink); }
+.lips{ fill:#000; }
+.bow{ fill:var(--paper); stroke:var(--ink); stroke-width:4; }
+.bowknot{ fill:#000; }
 .basket-label{ font-family:var(--font); font-size:22px; font-weight:700; letter-spacing:3px; text-anchor:middle; fill:var(--ink); }
 
 /* eggman transform layers */
@@ -85,7 +88,12 @@ html,body{
 #eg-torso{ transition:transform .6s steps(8); transform-origin:50% 92%; }
 #eg-pants{ transition:transform .55s steps(6); }
 
-.eating #eggman-mouth{ rx:64px; ry:64px; }
+/* CHEW: the open oval's black FILL is hidden (geometry unchanged, so the feeding
+   collision target from getMouthEatRect stays identical); the pinched clamp shows */
+.eating #eggman-mouth{ fill:transparent; }
+.chew{ fill:#000; stroke:none; transform-box:fill-box; transform-origin:50% 50%; transition:transform .1s steps(3); }
+.chew.squish{ transform:scaleY(5.2); }     /* tall ~= open, collapses to pinched when removed */
+.chew.twitch{ transform:translateY(2px) scaleX(0.82); }
 /* subtle "I have this egg" reaction when the mouth is armed during a drag */
 .armed #eggman-mouth{ rx:50px; ry:41px; }
 

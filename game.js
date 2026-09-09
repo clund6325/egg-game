@@ -69,7 +69,7 @@ const dom = {
   svg:$('eggSvg'),
   eggman:$('eggman'), egBob:$('eg-bob'), egTurn:$('eg-turn'), egTorso:$('eg-torso'),
   egLegs:$('eg-legs'), egPants:$('eg-pants'),
-  egFace:$('eg-face'), egButt:$('eg-butt'), egMouth:$('eggman-mouth'),
+  egFace:$('eg-face'), egButt:$('eg-butt'), egMouth:$('eggman-mouth'), egChew:$('eggman-chew'),
   egBush:$('eg-bush'), egHat:$('eg-hat'), egButtHat:$('eg-butt-hat'),
   egTie:$('eg-tie'), egArm3:$('eg-arm3'),
   mini:$('mini-eggman'), props:$('props'),
@@ -174,7 +174,21 @@ const EM = {
   place(x,y){ setWalk(0); this.x=x; if(y!=null) this.y=y; this.apply(); },
   async walkTo(x, dur){ setWalk(dur); dom.eggman.classList.add('walking'); this.x=x; this.apply();
                         await sleep(dur); dom.eggman.classList.remove('walking'); setWalk(0); },
-  eating(on){ dom.eggman.classList.toggle('eating', on); },
+  eating(on){ dom.eggman.classList.toggle('eating', !!on); setShown(dom.egChew, !!on);
+              if(!on) dom.egChew.classList.remove('squish','twitch'); },
+  _chewTok:0,
+  /* the real per-egg chew: OPEN oval -> squish -> PINCHED clamp -> twitch -> reopen.
+     Purely visual; the collision element (#eggman-mouth) never changes geometry. */
+  async chew(){
+    const tok = ++this._chewTok;
+    this.eating(true); dom.egChew.classList.add('squish');   // start ~open height
+    await sleep(20);  if(tok!==this._chewTok) return; dom.egChew.classList.remove('squish'); // collapse to pinch
+    await sleep(120); if(tok!==this._chewTok) return; dom.egChew.classList.add('twitch');    // tiny chew twitch
+    await sleep(150); if(tok!==this._chewTok) return; dom.egChew.classList.remove('twitch');
+    dom.egChew.classList.add('squish');                       // expand = reopen
+    await sleep(110); if(tok!==this._chewTok) return;
+    this.eating(false);
+  },
   _bend:0,
   face(side){ setShown(dom.egFace, side!=='back'); setShown(dom.egButt, side==='back'); },
   async turn(toBack){                       // squash to a thin frame, swap, unsquash
@@ -204,6 +218,7 @@ const EM = {
                  setT(dom.egTurn,'translate(-12 0)'); await sleep(70); } setT(dom.egTurn,null); },
   reset(){
     dom.eggman.classList.remove('walking','eating'); setWalk(0);
+    this._chewTok++; setShown(dom.egChew,false); dom.egChew.classList.remove('squish','twitch');  // mouth back to open
     this.x=this.HOMEX; this.y=this.HOMEY; this.apply();
     setT(dom.egTurn,null); setT(dom.egTorso,null); setT(dom.egBob,null); setT(dom.egBush,null);
     this._bend=0; dom.egPants.style.transform='translateY(0)';
@@ -390,10 +405,10 @@ function flyAndEat(el){
   el.classList.add('fly');
   positionEgg(el, m.x, m.y);
   el.style.transform = 'scale(0.12)';
-  EM.eating(true); sound.eat();
+  sound.eat();
   setTimeout(() => {
     el.remove(); sound.chew();
-    setTimeout(() => EM.eating(false), 130);
+    EM.chew();                                   // OPEN -> pinch -> twitch -> reopen (self-timed, self-resetting)
     if(activeController && typeof activeController.feedEgg==='function') activeController.feedEgg();
   }, 190);
 }
@@ -591,6 +606,28 @@ function labelProp(x,y,str,size,rot){ const t=document.createElementNS('http://w
 function futureEggman(x,y,labelStr,extra){ const g=prop(EGGLET+(extra||''), x, y);
   const t=document.createElementNS('http://www.w3.org/2000/svg','text'); t.setAttribute('x','0'); t.setAttribute('y','-70');
   t.setAttribute('text-anchor','middle'); t.setAttribute('font-size','15'); t.setAttribute('font-weight','700'); t.textContent=labelStr; g.appendChild(t); return g; }
+/* Mrs. Eggman — literally Eggman with a bow, lipstick and eyelashes. ONE helper
+   is reused for the portrait AND the live wife so they always match. */
+function mrsEggmanMarkup(){
+  return '<path class="eggbody" d="M0,-52 C-26,-52 -36,-26 -36,-8 C-36,14 -20,14 0,14 C20,14 36,14 36,-8 C36,-26 26,-52 0,-52 Z"/>'
+    + '<path class="ln" d="M-34,-14 q-10,3 -14,11"/><path class="ln" d="M34,-14 q10,3 14,11"/>'   // tiny arms
+    + '<circle class="eye" cx="-11" cy="-28" r="5.5"/><circle class="eye" cx="11" cy="-28" r="5.5"/>'
+    + '<circle class="pupil" cx="-11" cy="-27" r="2"/><circle class="pupil" cx="11" cy="-27" r="2"/>'
+    + '<path class="ln2" d="M-19,-33 l-4,-3 M-15,-35 l-3,-4 M-11,-37 l-1,-4"/>'                     // eyelashes L
+    + '<path class="ln2" d="M19,-33 l4,-3 M15,-35 l3,-4 M11,-37 l1,-4"/>'                            // eyelashes R
+    + '<path class="lips" d="M-12,-9 Q0,-15 12,-9 Q0,-2 -12,-9 Z"/><line class="ln2" x1="-12" y1="-9" x2="12" y2="-9"/>' // lipstick
+    + '<path class="bow" d="M0,-54 L-17,-64 L-17,-44 Z"/><path class="bow" d="M0,-54 L17,-64 L17,-44 Z"/><circle class="bowknot" cx="0" cy="-54" r="5"/>'
+    + '<path class="ln2" d="M-13,6 Q0,15 13,6"/><circle class="pupil" cx="0" cy="12" r="2.5"/>'     // necklace
+    + '<line class="ln" x1="-12" y1="14" x2="-12" y2="30"/><line class="ln" x1="12" y1="14" x2="12" y2="30"/>'
+    + '<ellipse class="foot" cx="-13" cy="31" rx="7" ry="3"/><ellipse class="foot" cx="13" cy="31" rx="7" ry="3"/>';
+}
+/* a big crude framed department-store portrait of Mrs. Eggman */
+function mrsPhotoMarkup(){
+  return '<rect class="ln" x="-80" y="-98" width="160" height="172" fill="#fff" stroke-width="6"/>'
+    + '<rect class="ln" x="-67" y="-85" width="134" height="134" fill="#fff"/>'
+    + '<g transform="translate(0,10) scale(1.15)">' + mrsEggmanMarkup() + '</g>'
+    + '<path class="ln" d="M-32,74 L-13,100 M32,74 L13,100"/>';   // crude easel legs
+}
 const SYS_MESSAGES = ['EGG ACCEPTED.','THAT WAS AN EGG.','THAT EGG DIDN’T COUNT.','THAT EGG COUNTED TWICE.',
   'THIS EGG IS 17 EGGS.','EGG NOT FOUND.','YOU HAVE TOO MANY EGGS.','YOU LOST 4 EGGS.','EGGMAN HAS NOTICED.',
   'HE NEEDS THIS.','PLEASE KEEP FEEDING HIM.','WRONG EGG.','EGG TOTAL UNAVAILABLE.','THE NUMBER IS CORRECT.',
@@ -776,7 +813,7 @@ async function miniWander(){
 const FINALE_ARCS = [
   { id:'wife', title:'WHERE IS MY WIFE?', weight:3, minPlayCount:1,
     async p25(c){ await sleep(300); await dialogAsync({icon:false,text:'WHERE IS MY WIFE?',buttons:[{label:'OK',cls:'default'}]}); },
-    async p50(c){ c._photo=prop('<rect class="ln" x="-34" y="-30" width="68" height="60" fill="#fff"/><ellipse class="eggbody" cx="0" cy="4" rx="15" ry="19"/>', EM.x+160, EM.y-50);
+    async p50(c){ c._photo=prop(mrsPhotoMarkup(), 700, 250);
       await dialogAsync({icon:false,text:'SHE WAS HERE WHEN\nI STARTED EATING.',buttons:[{label:'OK',cls:'default'}]}); },
     async p75(c){ await EM.shake(); await dialogAsync({icon:false,text:'I’LL EAT AS MANY EGGS AS IT\nTAKES TO GET MY WIFE BACK.',buttons:[{label:'OK',cls:'default'}]}); },
     async finale(c){ if(c._photo)c._photo.remove();
@@ -784,7 +821,7 @@ const FINALE_ARCS = [
       const phone=prop('<rect class="ln" x="-15" y="-26" width="30" height="52" rx="8" fill="#fff"/>', EM.x+150, EM.y-20);
       sound.error(); await sleep(500); sound.error();
       await dialogAsync({icon:false,text:'RING. RING.',buttons:[{label:'ANSWER',cls:'default'}]}); phone.remove();
-      const wife=prop(EGGLET+'<path class="ln" d="M0,-58 l-12,-16 l24,0 z"/><ellipse class="ln" cx="34" cy="0" rx="10" ry="7" fill="#fff"/>', 1000, EM.y);
+      const wife=prop(mrsEggmanMarkup(), 1000, EM.y);   // SAME design as the portrait
       wife.style.transition='transform 1.3s steps(10)'; await sleep(30); wife.setAttribute('transform',`translate(${EM.x+170} ${EM.y})`); await sleep(1400);
       dom.eggman.classList.add('walking'); await sleep(500); dom.eggman.classList.remove('walking');
       await dialogAsync({icon:false,text:'I WASN’T MISSING.',buttons:[{label:'…',cls:'default'}]});
