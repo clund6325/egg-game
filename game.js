@@ -17,7 +17,11 @@ const SAVE_KEY = 'eggGameBirthdayProgress';
 const MUTE_KEY = 'eggGameMuted';
 const SAVE_VERSION = 2;   // bump to force everyone through the birthday run once more
 
-function freshSave(){ return { version:SAVE_VERSION, canonicalCompleted:false, birthdayShown:false, playCount:0 }; }
+function freshHistory(){ return { recentFinales:[], finaleBag:[], recentMinors:[], lastTarget:0, chaosRuns:0 }; }
+function freshSave(){ return { version:SAVE_VERSION, canonicalCompleted:false, birthdayShown:false, playCount:0, chaosHistory:freshHistory() }; }
+function normHistory(h){ h=h||{}; return { recentFinales:Array.isArray(h.recentFinales)?h.recentFinales.slice(-5):[],
+  finaleBag:Array.isArray(h.finaleBag)?h.finaleBag.slice():[], recentMinors:Array.isArray(h.recentMinors)?h.recentMinors.slice(-15):[],
+  lastTarget:h.lastTarget|0, chaosRuns:h.chaosRuns|0 }; }
 
 /* ==========================================================================
    SAVE STATE
@@ -36,7 +40,8 @@ function loadSave(){
     return { version:SAVE_VERSION,
              canonicalCompleted:!!o.canonicalCompleted,
              birthdayShown:!!o.birthdayShown,
-             playCount:o.playCount|0 };
+             playCount:o.playCount|0,
+             chaosHistory: normHistory(o.chaosHistory) };   // additive: absent on old v2 saves
   }catch(e){ return freshSave(); }
 }
 function persist(){ try{ localStorage.setItem(SAVE_KEY, JSON.stringify(saveState)); }catch(e){} }
@@ -560,14 +565,19 @@ async function canonicalWinSequence(){
    ========================================================================== */
 /* Normal fed-egg values: 1-19 EXCLUDING multiples of 5, so totals feel arbitrary.
    These drive actualChaosScore (reliable progression). displayedEggCount lies. */
-const NORMAL_EGG_VALUES = [[1,8],[2,9],[3,9],[4,8],[6,7],[7,6],[8,6],[9,5],[11,4],[12,4],[13,3],[14,3],[16,2],[17,3],[18,2],[19,2]];
-const DISPLAY_LIES = ['EGG','???','40','80','41','0','-3','ONE MILLION','SIX'];
-function normalEggValue(){ return weighted(NORMAL_EGG_VALUES); }
+/* 1-19 excluding multiples of 5, weighted so small values dominate and a 17/19 feels notable */
+const NORMAL_EGG_VALUES = [[1,9],[2,10],[3,10],[4,9],[6,7],[7,6],[8,6],[9,5],[11,4],[12,4],[13,3],[14,3],[16,2],[17,2],[18,2],[19,2]];
+const DISPLAY_LIES = ['EGG','???','SIX','ONE MILLION','-3 EGGS','0 EGGS','41 EGGS','80 EGGS','6 EGGS','TOO MANY EGGS','EGGS: YES'];
+/* modifier-aware: SLOW COUNT skews low (min of two draws), HOT EGGS skews high (max) */
+function normalEggValue(mod){ const v=weighted(NORMAL_EGG_VALUES);
+  if(mod==='slowCount') return Math.min(v, weighted(NORMAL_EGG_VALUES));
+  if(mod==='hotEggs')  return Math.max(v, weighted(NORMAL_EGG_VALUES));
+  return v; }
 /* generic weighted pick over objects carrying a .weight */
 function pickWeighted(arr){ let t=0; for(const a of arr) t+=(a.weight||1); let r=Math.random()*t;
   for(const a of arr){ if((r-=(a.weight||1))<0) return a; } return arr[arr.length-1]; }
 /* repetition memory — persists across Play Again within a session */
-let _recentFinales=[], _recentMinors=[], _lastTarget=0, _chaos=null;
+let _chaos=null;
 
 /* ---- crude monochrome finale props (injected into #props, cleared each run) ---- */
 function prop(svg, tx, ty){ const g=document.createElementNS('http://www.w3.org/2000/svg','g');
@@ -944,29 +954,93 @@ const FINALE_ARCS = [
         const cart=prop('<rect class="ln" x="-24" y="-30" width="48" height="40" fill="#fff"/>', -60, 330); cart.style.transition='transform 1.6s linear'; await sleep(30); cart.setAttribute('transform','translate(1020 330)'); await sleep(1500); cart.remove(); if(cl)cl.remove(); } }); } }
 ];
 
-/* ---- selection with no-consecutive-repeat / recent-avoidance ---- */
-function pickArc(pc){ const elig=FINALE_ARCS.filter(a=>pc>=(a.minPlayCount||0));
-  let pool=elig.filter(a=>a.id!==_recentFinales[_recentFinales.length-1]); if(!pool.length) pool=elig.length?elig:FINALE_ARCS;
-  const a=pickWeighted(pool); _recentFinales.push(a.id); if(_recentFinales.length>4)_recentFinales.shift(); return a; }
-function pickMinor(pc){ const elig=MINOR_EVENTS.filter(e=>pc>=(e.min||0));
-  let pool=elig.filter(e=>!_recentMinors.includes(e.id)); if(!pool.length) pool=elig;
-  const e=pool.length?pickWeighted(pool):null; if(e){ _recentMinors.push(e.id); if(_recentMinors.length>6)_recentMinors.shift(); } return e; }
-function pickTarget(){ let t,tries=0; do{ t=90+rand(151); }while(Math.abs(t-_lastTarget)<30 && tries++<8); _lastTarget=t; return t; }
-
-/* ---- milestone dispatch (arc beats take priority over minors) ---- */
-function checkMilestones(c){
-  const pct=c.score/c.target, marks=[[0.25,'p25'],[0.5,'p50'],[0.75,'p75'],[1,'finale']];
-  for(const [thr,key] of marks){ if(pct>=thr && !c.fired.has(key)){ c.fired.add(key); c.log.push('arc:'+key);
-    if(key==='finale'){ c.finaleTriggered=true; clearChaosEvents(); runChaosEvent({id:'arc:finale', async run(){ await c.arc.finale(c); }}); }
-    else { runChaosEvent({id:'arc:'+key, async run(){ await c.arc[key](c); }}); resetMinorCooldown(c); } } }
+/* ---- FINALE SHUFFLE BAG (persisted) ----
+   Every eligible arc is seen once before the pool repeats; the first 5 Chaos
+   runs are always distinct; a new bag never opens with the previous finale. */
+function pickArc(pc){
+  const h = saveState.chaosHistory;
+  const eligible = FINALE_ARCS.filter(a=>pc>=(a.minPlayCount||0)).map(a=>a.id);
+  let bag = (h.finaleBag||[]).filter(id=>eligible.includes(id));
+  if(bag.length===0) bag = shuffle(eligible.slice());          // refill + reshuffle
+  const last = h.recentFinales[h.recentFinales.length-1];
+  const excluded = (h.chaosRuns < 5) ? h.recentFinales.slice() : (last ? [last] : []);
+  let idx = bag.findIndex(id=>!excluded.includes(id));
+  if(idx < 0){ idx = bag.findIndex(id=>id!==last); if(idx<0) idx=0; }   // graceful relax
+  const id = bag.splice(idx,1)[0];
+  h.finaleBag = bag;
+  h.recentFinales.push(id); while(h.recentFinales.length>5) h.recentFinales.shift();
+  h.chaosRuns = (h.chaosRuns|0) + 1;
+  persist();
+  return FINALE_ARCS.find(a=>a.id===id) || FINALE_ARCS[0];
 }
 
-/* ---- minor-event pressure timing (irregular gaps) ---- */
-function resetMinorCooldown(c){ c.lastEventTime=performance.now(); c.feedsSinceEvent=0; c.cooldownFeeds=2+rand(4); c.cooldownMs=3000+rand(6000); c.minorChance=0; }
+/* ---- MINOR anti-repetition (stronger for distinctive events) ---- */
+const DISTINCTIVE_MINORS = new Set(['adventure365','danFlashes','babyOfYear','tcTuggers','briansEgg','bozoEgg',
+  'order55','eggUnion','didntDo','juryDuty','prevTimeline','managementEgg','sloppyMudpie','hotDog','coffinEgg']);
+function pickMinor(pc){
+  const h = saveState.chaosHistory, recent = h.recentMinors;
+  const elig = MINOR_EVENTS.filter(e=>pc>=(e.min||0));
+  const last8 = recent.slice(-8), last12 = recent.slice(-12);
+  let pool = elig.filter(e=> !last8.includes(e.id) && !(DISTINCTIVE_MINORS.has(e.id) && last12.includes(e.id)));
+  if(!pool.length) pool = elig.filter(e=> !recent.slice(-3).includes(e.id));
+  if(!pool.length) pool = elig;
+  const e = pool.length ? pickWeighted(pool) : null;
+  if(e){ recent.push(e.id); while(recent.length>15) recent.shift(); persist(); }
+  return e;
+}
+
+/* ---- hidden target: persisted anti-similarity + gentle per-arc bias ---- */
+function pickTarget(arcId){
+  const h = saveState.chaosHistory;
+  let lo=90, hi=240;
+  if(arcId==='wife'||arcId==='murder'||arcId==='timetravel'){ lo=140; hi=240; }   // longer stories
+  else if(arcId==='riddle'||arcId==='audit'){ lo=90; hi=170; }                     // shorter, dialog-heavy
+  let t,tries=0; do{ t=lo+rand(hi-lo+1); }while(Math.abs(t-h.lastTarget)<30 && tries++<8);
+  h.lastTarget=t; persist(); return t;
+}
+
+/* ---- milestone dispatch with PACING (beats must breathe) ---- */
+const MIN_FINALE_FEEDS = 9, MIN_FINALE_MS = 20000;
+function finaleAllowed(c){ return c.feeds>=MIN_FINALE_FEEDS && (Date.now()-c.startT)>=MIN_FINALE_MS; }
+function checkMilestones(c){
+  if(c.milestone > 3) return;
+  const THRESH=[0.25,0.5,0.75,1.0], KEYS=['p25','p50','p75','finale'];
+  if(c.score/c.target < THRESH[c.milestone]) return;                 // next milestone not reached
+  if(c.milestone > 0){                                               // hold pending until it's had room to breathe
+    if(c.feedsSinceBeat < 1) return;
+    if(performance.now()-c.lastBeatTime < c.arcGap) return;
+  }
+  if(c.milestone===3 && !finaleAllowed(c)) return;                   // minimum-run guard
+  const key = KEYS[c.milestone]; c.milestone++;
+  c.fired.add(key); c.log.push('arc:'+key);
+  c.lastBeatTime=performance.now(); c.feedsSinceBeat=0; c.arcGap=2000+rand(2000);
+  if(key==='finale'){ c.finaleTriggered=true; clearChaosEvents(); runChaosEvent({id:'arc:finale', async run(){ await c.arc.finale(c); }}); }
+  else { runChaosEvent({id:'arc:'+key, async run(){ await c.arc[key](c); }}); }
+  // NB: don't reset the minor cooldown here — chaosBusy already blocks minors
+  // DURING a beat; resetting every beat starved minors entirely.
+}
+
+/* ---- minor-event pressure timing (irregular gaps; nudged by run modifier) ---- */
+function resetMinorCooldown(c){ c.lastEventTime=performance.now(); c.feedsSinceEvent=0;
+  let fMin=2,fRange=4,mMin=3000,mRange=6000;
+  if(c.mod==='quietShift'){ fMin=4; fRange=4; mMin=6000; mRange=7000; }
+  else if(c.mod==='badDay'){ fMin=1; fRange=3; mMin=2000; mRange=4000; }
+  c.cooldownFeeds=fMin+rand(fRange); c.cooldownMs=mMin+rand(mRange); c.minorChance=0; }
 function maybeFireMinor(c){
   if(chaosBusy() || c.feedsSinceEvent<c.cooldownFeeds || (performance.now()-c.lastEventTime)<c.cooldownMs) return;
   c.minorChance=Math.min(0.85, c.minorChance+0.2);
   if(chance(c.minorChance)){ const ev=pickMinor(saveState.playCount); if(ev){ c.log.push('minor:'+ev.id); resetMinorCooldown(c); runChaosEvent(ev); } }
+}
+
+/* ---- displayed counter: reliable score hidden; the readout lies (modifier-tuned) ---- */
+function renderDisplay(c, v){
+  const lieChance = (c.mod==='liar') ? 0.32 : 0.14;
+  if(chance(lieChance)){ ui.setCounter(pick(DISPLAY_LIES)); return; }
+  const flip = (c.mod==='auditorsNightmare') ? 0.5 : 0.2;
+  if(chance(0.76)) c.disp += v;
+  else if(chance(flip)) c.disp -= (1+rand(9));
+  else c.disp += rand(9)-4;
+  ui.setCounter(ui.eggsPlural(c.disp));
 }
 
 /* ---- the payoff (shared; finales pass variations) ---- */
@@ -999,9 +1073,12 @@ function startChaos(){
   _eventActive=false; clearChaosEvents();      // fresh scheduler each run
   const pc = saveState.playCount;
   const arc = pickArc(pc);
-  const c = { score:0, disp:0, target:pickTarget(), feeds:0, done:false, finaleTriggered:false,
-              arc, fired:new Set(), startT:Date.now(), log:[],
+  const mod = chance(0.27) ? pick(['slowCount','hotEggs','liar','quietShift','badDay','auditorsNightmare']) : null;
+  const c = { score:0, disp:0, target:pickTarget(arc.id), feeds:0, done:false, finaleTriggered:false,
+              arc, mod, fired:new Set(), startT:Date.now(), log:[],
+              milestone:0, lastBeatTime:0, feedsSinceBeat:0, arcGap:2000+rand(2000),
               lastEventTime:0, feedsSinceEvent:0, cooldownFeeds:2+rand(4), cooldownMs:3000+rand(6000), minorChance:0 };
+  resetMinorCooldown(c);            // seed initial cooldown (respects modifier)
   _chaos = c;
   refillBasket(5);
 
@@ -1010,15 +1087,13 @@ function startChaos(){
 
   activeController = { feedEgg(){
     if(c.done || c.finaleTriggered) return;
-    c.feeds++; c.feedsSinceEvent++;
-    const v = normalEggValue();
+    c.feeds++; c.feedsSinceEvent++; c.feedsSinceBeat++;
+    const v = normalEggValue(c.mod);
     c.score += v;                                     // reliable hidden progression
-    // the displayed counter lies freely
-    if(chance(0.15)) ui.setCounter(pick(DISPLAY_LIES));
-    else { if(chance(0.78)) c.disp += v; else c.disp += rand(9)-4; ui.setCounter(ui.eggsPlural(c.disp)); }
+    renderDisplay(c, v);                              // the readout lies independently
     // safety: never strand the player
     if(c.feeds>=30 || (Date.now()-c.startT)>150000) c.score = Math.max(c.score, c.target);
-    // arc beats first (take priority)
+    // arc beats first (take priority; paced)
     checkMilestones(c);
     if(c.finaleTriggered) return;
     // occasional out-of-eggs (respects cooldown/scheduler)
@@ -1120,8 +1195,9 @@ window.EGG = {
   eggs(){ return [...dom.play.querySelectorAll('.egg')]; },
   mouth(){ return getMouthEatRect(); },
   getMouthDebug(){ return _mouthDebug; },
-  chaosInfo(){ return _chaos && { arc:_chaos.arc.id, target:_chaos.target, score:_chaos.score,
-    feeds:_chaos.feeds, disp:_chaos.disp, fired:[..._chaos.fired], done:_chaos.done, log:_chaos.log.slice() }; }
+  chaosInfo(){ return _chaos && { arc:_chaos.arc.id, mod:_chaos.mod, target:_chaos.target, score:_chaos.score,
+    feeds:_chaos.feeds, disp:_chaos.disp, fired:[..._chaos.fired], done:_chaos.done, log:_chaos.log.slice() }; },
+  history(){ return saveState.chaosHistory; }
 };
 
 if('serviceWorker' in navigator){
